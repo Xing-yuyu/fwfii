@@ -1,0 +1,6 @@
+[console_scripts]
+gtrfs_deliver = gtrfs.core.planning_deliver:main
+gtrfs_ota = gtrfs.core.ota:main
+gtrfs_plan = gtrfs.core.planning_gen:main
+gtrfs_sock = gtrfs.core.program_sock:main
+

@@ -1,0 +1,43 @@
+Metadata-Version: 1.0
+Name: gtrfs
+Version: 1.0.1
+Summary: Goertek Robotics Formation System Programming Interface
+Home-page: http://www.gtkrobotics.com
+Author: Andrew Wang
+Author-email: andrewf.wang@goertek.com
+License: UNKNOWN
+Description: # Goertek Robotics Formation System (GTRFS) Programing Interface
+        
+        *gtrfs* is a python software development interface for Fii educational copters.
+        
+        **Applications**
+        
+        * flight control
+        * mission planning
+        * light show
+        
+        Build on Windows python3 environment.
+        
+        ## Built-in modules
+        
+        1. `fc`, flight control APIs
+        2. `planning`, light show APIs
+        3. `utils`, utils APIs
+        
+        ## Built-in excutives
+        
+        1. `gtrfs_uart`, for graphical programming over zigbee
+        2. `gtrfs_sock`, for graphical programming over wifi
+        3. `gtrfs_plan`, for mission planning
+        4. `gtrfs_deliver`, for planning delivery
+        
+        ## Installation
+        
+        see [installation](./doc/installation.md).
+        
+        ## Tutorial
+        
+        see [tutorial](./doc/tutorial.md)
+        
+        
+Platform: UNKNOWN
