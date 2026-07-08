@@ -42,6 +42,7 @@ def TimerStart():
     '''
     The start time, usually put it at the beginning of the python script.
     '''
+    global startT
     startT = GetCurMs()
 
 def WaitUtil_Ms(ms):

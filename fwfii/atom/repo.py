@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 from __future__ import division, absolute_import, print_function
-from multiprocessing import Queue
-import time
+from itertools import count
+from queue import Empty, PriorityQueue
 import threading
 
 class AtomRepo:
-    _fifo   = Queue()
-    _lock   = threading.Lock()
+    _fifo   = PriorityQueue()
+    _counter = count()
+    _lock   = threading.RLock()
 
     @staticmethod
     def lock():
@@ -17,10 +18,8 @@ class AtomRepo:
         AtomRepo._lock.release()
 
     @staticmethod
-    def getNext():
-        #AtomRepo._lock.acquire()
-        item = AtomRepo._fifo.get()
-        #AtomRepo._lock.release()
+    def getNext(timeout=None):
+        _, _, item = AtomRepo._fifo.get(timeout=timeout)
         return item
 
     @staticmethod
@@ -32,10 +31,20 @@ class AtomRepo:
         return AtomRepo._fifo.qsize()
 
     @staticmethod
-    def storage(zigbeepack):
-        AtomRepo._lock.acquire()
-        AtomRepo._fifo.put(zigbeepack)
-        AtomRepo._lock.release()
+    def storage(zigbeepack, priority=False):
+        priority_value = 0 if priority else 1
+        with AtomRepo._lock:
+            AtomRepo._fifo.put((priority_value, next(AtomRepo._counter), zigbeepack))
+
+    @staticmethod
+    def clear():
+        while True:
+            try:
+                AtomRepo._fifo.get_nowait()
+            except Empty:
+                break
+
+    Empty = Empty
 '''        
 if __name__ == '__main__':
     from .gen import zigbeePack, dummyPayload, wifiPack

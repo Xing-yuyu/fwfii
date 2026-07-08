@@ -196,7 +196,7 @@ class buzzerPayload(ctypes.LittleEndianStructure):
         self.mode    = mode
         self.fre     = fre
         self.duty    = duty
-        self.on_off  = self.on_off 
+        self.on_off  = on_off
 
     def __str__(self):
         return ctypes.string_at(ctypes.addressof(self), ctypes.sizeof(self))

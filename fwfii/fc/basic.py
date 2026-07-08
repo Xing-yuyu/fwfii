@@ -208,7 +208,7 @@ def MissionStart(flight, ts=0, emergency=False):
     * `ts` - timestamp, 0 by default. Use 0 in online mode, use timestamp in offline mode
     * `emergency` - False by default, send emergency disarm command if the copters has already been running your scripts if set it as True.
     '''
-    Mission(flight, 0, ts, emergency)
+    Mission(flight, command=0, ts=ts, emergency=emergency)
 
 
 #
@@ -224,7 +224,7 @@ def MissionContinue(flight, ts=0, emergency=False):
     * `ts` - timestamp, 0 by default. Use 0 in online mode, use timestamp in offline mode
     * `emergency` - False by default, send emergency disarm command if the copters has already been running your scripts if set it as True.
     '''
-    Mission(flight, 1, ts, emergency)
+    Mission(flight, command=1, ts=ts, emergency=emergency)
 
 
 #
@@ -240,7 +240,7 @@ def MissionPause(flight, ts=0, emergency=False):
     * `ts` - timestamp, 0 by default. Use 0 in online mode, use timestamp in offline mode
     * `emergency` - False by default, send emergency disarm command if the copters has already been running your scripts if set it as True.
     '''
-    Mission(flight, 2, ts, emergency)
+    Mission(flight, command=2, ts=ts, emergency=emergency)
 
 
 #
@@ -633,7 +633,7 @@ def SimpleHarmonic(flight, axis, x, y, z, amp=50, omega=90, phase=0, loop=1, ts=
     Make the flight do a simple harmonic movement along with the specified axis.    
 
     $$
-    y = A*sin(\omega*t+\phi)
+    y = A*sin(omega*t+phi)
     $$
 
     *Parameters*:
