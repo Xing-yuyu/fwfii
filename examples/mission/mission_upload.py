@@ -1,16 +1,28 @@
+"""Offline mission upload example.
+
+This script compiles locally, but upload/start require --hardware.
 """
-离线任务上传 - 编译→上传→起飞
-"""
-from fwfii.quick import connect, disconnect, plan, deliver, mission_start
+import argparse
 
-# 1. 编译（自动断开连接）
-plan('mission.py', './output')
+from fwfii.quick import connect, deliver, mission_start, plan
 
-# 2. 上传
-deliver(71101, './output')
 
-# 3. 重连心跳
-connect(71101)
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hardware", action="store_true")
+    parser.add_argument("--uav-id", type=int, default=71101)
+    parser.add_argument("--segment", type=int, default=71)
+    args = parser.parse_args()
 
-# 4. 倒计时起飞
-mission_start([71], countdown=5)
+    plan("mission.py", "./output")
+    if not args.hardware:
+        print("Compiled mission only. Refusing upload/start without --hardware.")
+        return
+
+    deliver(args.uav_id, "./output")
+    connect(args.uav_id)
+    mission_start([args.segment], countdown=5)
+
+
+if __name__ == "__main__":
+    main()

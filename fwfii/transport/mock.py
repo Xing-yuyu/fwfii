@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from threading import Lock
-from typing import Iterable, List, Set, Tuple
+from typing import Iterable, List, Optional, Set, Tuple
 
 from .base import BaseTransport, TransportResult, packet_target_uavid
 
@@ -9,7 +9,7 @@ from .base import BaseTransport, TransportResult, packet_target_uavid
 class MockTransport(BaseTransport):
     def __init__(self, fail_targets: Iterable[int] = ()):
         self.fail_targets: Set[int] = set(fail_targets)
-        self.sent: List[Tuple[int, bytes]] = []
+        self.sent: List[Tuple[Optional[int], bytes]] = []
         self.closed = False
         self._lock = Lock()
 

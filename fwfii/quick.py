@@ -88,7 +88,7 @@ def deliver(uavid, path, ip=None):
     failed = [result for result in results if not result.success]
     if failed:
         raise RuntimeError("upload failed: {}".format(failed[0].error))
-    print(f"[fwfii] 上传完成")
+    print("[fwfii] 上传完成")
     return results
 
 

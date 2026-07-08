@@ -195,7 +195,7 @@ class OTA(scriptsTransferOverSock):
         self.hw = hw
 
     def _startTrans(self, filename):
-        size = os.path.getsize(filename) + 4
+        size = Path(filename).stat().st_size + 4
         if self.hw == 0:
             self.transfer((Upgrade_LED(self.flight, size)))
         elif self.hw == 1:
