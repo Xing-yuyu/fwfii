@@ -23,8 +23,8 @@ class AtomDelivery:
             self.vo = vo
             self.atom = None
             self.INTERVAL = 0.2
-            self.s = Thread(target = self.__sending__, args=())
-            self.r = Thread(target = self.__receiving__, args=())
+            self.s = Thread(target = self.__sending__, args=(), daemon=True)
+            self.r = Thread(target = self.__receiving__, args=(), daemon=True)
             self.s.start()
             self.r.start()
         except Exception:
@@ -38,14 +38,14 @@ class AtomDelivery:
                     continue
 
                 ct = GetCurTime()
-                
-                if not AtomRepo.isempty():
-                    self.atom = AtomRepo.getNext()
+                try:
+                    self.atom = AtomRepo.getNext(timeout=0.05)
+                except AtomRepo.Empty:
+                    continue
 
-                if self.atom != None:
-                    #print("[S]> " + repr(self.atom))
-                    #print "[S]> ", ct
-                    self.writebytes((self.atom))
+                #print("[S]> " + repr(self.atom))
+                #print "[S]> ", ct
+                self.writebytes((self.atom))
                 while GetCurTime() - ct < self.INTERVAL:
                     time.sleep(0.001)
                     pass
@@ -127,14 +127,22 @@ class AtomDelivery:
             self._sending = False
             self._receiving = False
             self._connecting = False
-            self.s.join(timeout=2)
-            self.r.join(timeout=2)
+            if hasattr(self, 's'):
+                self.s.join(timeout=2)
+            if hasattr(self, 'r'):
+                self.r.join(timeout=2)
             if hasattr(self, 'c'):
                 self.c.join(timeout=2)
-            for client in list(self.client.values()):
+            if hasattr(self, 'client'):
+                for client in list(self.client.values()):
+                    try:
+                        client.shutdown(socket.SHUT_RDWR)
+                        client.close()
+                    except:
+                        pass
+            if hasattr(self, '_handle_'):
                 try:
-                    client.shutdown(2)
-                    client.close()
+                    self._handle_.close()
                 except:
                     pass
         except Exception:
@@ -153,8 +161,8 @@ class TcpDelivery(AtomDelivery):
         self.vo = vo
         self.atom = None
         self.INTERVAL = 0.2
-        self.s = Thread(target = self.__sending__, args=())
-        self.r = Thread(target = self.__receiving__, args=())
+        self.s = Thread(target = self.__sending__, args=(), daemon=True)
+        self.r = Thread(target = self.__receiving__, args=(), daemon=True)
         self.s.start()
         self.r.start()
 
@@ -175,6 +183,7 @@ class TcpDelivery(AtomDelivery):
     def __connectServeritem__(self, destaddr, atom):
         while self._connecting and destaddr in self.server.keys():
             if not self.server[destaddr][0]:
+                sock = None
                 try:
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -188,7 +197,8 @@ class TcpDelivery(AtomDelivery):
                     self.server[destaddr] = (True, None)
                     self.writebytes(destaddr, atom)
                 except Exception:
-                    sock.close()
+                    if sock is not None:
+                        sock.close()
                     #traceback.print_exc()
                     self._notification(destaddr, 0)
             else:
@@ -209,13 +219,14 @@ class TcpDelivery(AtomDelivery):
         while self._sending:
             #time.sleep(0.001)
             try:
-                #AtomRepo.lock()
                 if self._pause_sending:
-                    AtomRepo.unlock()
+                    time.sleep(0.05)
                     continue
                 
-                #if not AtomRepo.isempty():
-                zigbeepack = AtomRepo.getNext()
+                try:
+                    zigbeepack = AtomRepo.getNext(timeout=0.05)
+                except AtomRepo.Empty:
+                    continue
                 self.atom = zigbeepack  
                 #print("[zigbeepack] {}\n".format(zigbeepack.payload[6]))
                 if zigbeepack.payload[6] == 124:
@@ -253,17 +264,14 @@ class TcpDelivery(AtomDelivery):
                         if destaddr not in self.connect_threads.keys():
                             #print("[S]Add> " + repr(destaddr))
                             self.server[destaddr] = (False, zigbeepack)
-                            cthread = Thread(target = self.__connectServeritem__, args=(destaddr, zigbeepack,))
-                            cthread.setDaemon(True)
+                            cthread = Thread(target = self.__connectServeritem__, args=(destaddr, zigbeepack,), daemon=True)
                             cthread.start()
                             self.connect_threads[destaddr] = cthread
                     elif self.atom != None:
                         #print "[S]> ", ct
                         self.writebytes(destaddr, self.atom)  
                 
-                #AtomRepo.unlock()
             except Exception:
-                AtomRepo.unlock()
                 traceback.print_exc()
         
         print("AtomDelivery __sending__ end...\n")
@@ -388,13 +396,15 @@ class TcpDelivery(AtomDelivery):
             # 强制关闭所有 socket，让线程从 recv/accept 中退出
             for client in list(self.client.values()):
                 try:
-                    client.shutdown(2)
+                    client.shutdown(socket.SHUT_RDWR)
                     client.close()
                 except:
                     pass
 
-            # 不 join，让线程自然死亡
-            # self.s 和 self.r 会在进程退出时自动清理
+            self.s.join(timeout=2)
+            self.r.join(timeout=2)
+            for thread in list(self.connect_threads.values()):
+                thread.join(timeout=2)
         except Exception:
             traceback.print_exc()
 
@@ -413,8 +423,8 @@ class UdpDelivery(AtomDelivery):
         self.vo = vo
         self.atom = None
         self.INTERVAL = 0.2
-        self.s = Thread(target = self.__sending__, args=())
-        self.r = Thread(target = self.__receiving__, args=())
+        self.s = Thread(target = self.__sending__, args=(), daemon=True)
+        self.r = Thread(target = self.__receiving__, args=(), daemon=True)
         self.s.start()
         self.r.start()
 
@@ -422,22 +432,20 @@ class UdpDelivery(AtomDelivery):
         while self._sending:
             time.sleep(0.001)
             try:
-                AtomRepo.lock()
                 if self._pause_sending:
+                    time.sleep(0.05)
                     continue
                 
-                if not AtomRepo.isempty():
-                    zigbeepack = AtomRepo.getNext()
-                    self.atom = zigbeepack
-                    self.destaddr = ('192.168.{}.{}'.format(zigbeepack.zigbee_header.group, zigbeepack.zigbee_header.address), 10014)
-                    if self.atom != None:
-                        #print("[S]> " + repr(self.atom))
-                        #print "[S]> ", ct
-                        self.writebytes((self.atom))
-                        
-                AtomRepo.unlock()
+                try:
+                    zigbeepack = AtomRepo.getNext(timeout=0.05)
+                except AtomRepo.Empty:
+                    continue
+                self.atom = zigbeepack
+                self.destaddr = ('192.168.{}.{}'.format(zigbeepack.zigbee_header.group, zigbeepack.zigbee_header.address), 10014)
+                #print("[S]> " + repr(self.atom))
+                #print "[S]> ", ct
+                self.writebytes((self.atom))
             except Exception:
-                AtomRepo.unlock()
                 traceback.print_exc()
 
         print("AtomDelivery __sending__ end...\n")

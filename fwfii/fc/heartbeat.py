@@ -3,16 +3,20 @@ from __future__ import division, absolute_import, print_function
 from threading import Thread
 import time
 import traceback
-import os
+import threading
 from fwfii.utils import *
 
 class HeartBeat:
     INTERVAL = 0.2
     _enable = True
     flights = {}
-    def __init__(self):
+    _lock = threading.RLock()
+
+    def __init__(self, interval=None):
+        self.INTERVAL = interval or HeartBeat.INTERVAL
         self._sending = True
-        self.t = Thread(target = self._beating_, args = ())
+        self.errors = []
+        self.t = Thread(target = self._beating_, args = (), daemon=True)
         self.t.start()
         
     @staticmethod
@@ -29,46 +33,43 @@ class HeartBeat:
 
     @staticmethod
     def addFlight(flight):
-        HeartBeat.flights[flight.uavid] = flight
+        with HeartBeat._lock:
+            HeartBeat.flights[flight.uavid] = flight
 
     @staticmethod
     def removeFlight(flight):
-        HeartBeat.flights.pop(flight.uavid, None)
+        with HeartBeat._lock:
+            HeartBeat.flights.pop(flight.uavid, None)
         
     @staticmethod
     def addFlights(flights):
-        HeartBeat.flights += flights
+        with HeartBeat._lock:
+            HeartBeat.flights.update({flight.uavid: flight for flight in flights})
 
     def _beating_(self):
         from .advanced import HeartBeatData, RequestPosition, RequestBatteryCurrent
         while self._sending:
-            time.sleep(0.001)
-            if self._sending == False:
-                break
-            if HeartBeat._enable:
-                for uavid, flight in self.flights.items():
-                    time.sleep(0.01)
+            time.sleep(0.01)
+            if not HeartBeat._enable:
+                continue
+            with HeartBeat._lock:
+                flights = list(HeartBeat.flights.items())
+            for _uavid, flight in flights:
+                if not self._sending:
+                    break
+                try:
                     if GetCurTime() - flight.lastBeatTime >= self.INTERVAL:
                         HeartBeatData(flight)
                         RequestPosition(flight)
-                        appData = os.getenv("APPDATA")
-                        if not os.path.exists(appData + '/FlightPos'):
-                            os.mkdir(appData + '/FlightPos')
-                        fp = open(appData + '/FlightPos/' + str(uavid), 'w')
-                        fp.write(str(flight.position))
-                        #fp.write(str(flight.position) + '\n')
-                        fp.close()
-                        print(flight.position)
                         RequestBatteryCurrent(flight)
                         flight.lastBeatTime = GetCurTime()
-                    #time.sleep(self.INTERVAL)
-                    #time.sleep(self.INTERVAL / len(self.flights) - (time.clock() - ct))
-                    #print("*****************************_beating_")
-        print("HeartBeat _beating_ end...\n")
+                except Exception as exc:
+                    self.errors.append(exc)
+                    traceback.print_exc()
 
     def close(self):
         try:
             self._sending = False
-            # 不等了
+            self.t.join(timeout=2)
         except Exception:
             traceback.print_exc()

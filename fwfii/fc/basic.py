@@ -2,8 +2,6 @@
 from __future__ import division, absolute_import, print_function
 
 import math
-import os
-
 from .advanced import *
 from fwfii.utils import Delay, GetCurMs
 from math import sqrt, sin, cos, pi
@@ -404,28 +402,19 @@ def MoveDelta(flight, dx, dy, dz, ts=0, emergency=False, passby=False):
 
 def ReadPosition(flight):
     from .heartbeat import HeartBeat
-    for uavid, f in HeartBeat.flights.items():
-        print(flight.uavid, uavid)
-        if uavid == flight.uavid:
-            print(f.fcstatus)
-            return f.position
+    f = HeartBeat.flights.get(flight.uavid)
+    if f is not None:
+        return f.position
+    if hasattr(flight, "position"):
+        return flight.position
     return None
 
 
 def ReadPosition2(flight):
-    appData = os.getenv("APPDATA")
-    if not os.path.exists(appData + '/FlightPos/' + str(flight.uavid)):
+    pos = ReadPosition(flight)
+    if pos is None:
         return None
-    pos = None
-    try:
-        fp = open(appData + '/FlightPos/' + str(flight.uavid), 'r')
-        line = fp.readline()
-        line = line.strip('(').strip(')').split(',')
-        pos = [int(line[1]), int(line[0]), int(line[2])]
-        fp.close()
-    except:
-        pass
-    return pos
+    return [int(pos[1]), int(pos[0]), int(pos[2])]
 
 
 def ReadX(flight):

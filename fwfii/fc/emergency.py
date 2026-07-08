@@ -1,12 +1,26 @@
 #!/usr/bin/env python
 from __future__ import division, absolute_import, print_function
 from threading import Thread
-from multiprocessing.connection import Client, Listener
+from multiprocessing.connection import Listener
 import traceback
 from fwfii.atom import AtomRepo as repo
 from fwfii.atom import zigbeePack, crc, wifiPack, flightPayload
 import ctypes
-import time
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class EmergencyResult:
+    target_uav: int
+    queued: bool
+    error: str = ""
+
+
+def _target_uav(payload):
+    header = getattr(payload, "zigbee_header", None)
+    if header is None:
+        return 0
+    return int(header.group) * 1000 + int(header.address)
 
 class Emergency_Server:
     def __init__(self):
@@ -64,7 +78,6 @@ class Emergency_Server:
         try:
             self.serving = False
             # 运行一下client端连接，保证Emergency_Server Listener的accept退出阻塞
-            c = Emergency_Client()
             self.serv.close()
             self.t.join()
         except Exception:
@@ -77,16 +90,7 @@ class Emergency_Client:
 
     @staticmethod
     def send(payload):
-        tryCnt = 3
-        while not Emergency_Client.conn:
-            try:
-                tryCnt -= 1
-                Emergency_Client.conn = Client(('localhost', 25000), authkey=b'peekaboo')
-            except:
-                if tryCnt <= 0:
-                    print("Need connect flight first")
-                    break
-                continue
-            #print("Emergency_Client connect")
-            
-        Emergency_Client.conn.send(payload)
+        if payload is None:
+            return EmergencyResult(0, False, "missing emergency payload")
+        repo.storage(payload, priority=True)
+        return EmergencyResult(_target_uav(payload), True)
