@@ -6,4 +6,10 @@ from . import led
 from . import planning
 from .quick import connect, disconnect,  plan, deliver
 from .runtime import FiiRuntime, RuntimeConfig
-from .transport import MockTransport, TransportResult
+from .transport import (
+    MockTransport,
+    SerialTransport,
+    TcpTransport,
+    TcpTransportConfig,
+    TransportResult,
+)
