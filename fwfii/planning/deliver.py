@@ -1,26 +1,24 @@
 #!/usr/bin/env python
 from __future__ import division, absolute_import, print_function
 
-import os
 import traceback
+from pathlib import Path
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SOCK_DGRAM, SO_REUSEADDR
 import struct
 from threading import Thread
+import time
 from fwfii.atom import AtomRepo, wifiPack, dummyPayload
 from fwfii.utils import Delay
 from fwfii.fc import Flight, Transfer, Upgrade_LED, End_Transfer, Upgrade_LED2, Upgrade_FC, Upgrade_RK, End_Transfer2
 
 class fileGen:
     def __init__(self, path, id, append = False):
-        if not os.path.exists(path):
-            try:
-                os.mkdir(path)
-            except Exception:
-                traceback.print_exc()
+        self._path = Path(path)
+        self._path.mkdir(parents=True, exist_ok=True)
         if append:
-            self._file = open(path + '/' + str(id) + '.ls', 'ab')
+            self._file = (self._path / (str(id) + '.ls')).open('ab')
         else:
-            self._file = open(path + '/' + str(id) + '.ls', 'wb')
+            self._file = (self._path / (str(id) + '.ls')).open('wb')
 
     def write(self, wifipack):
         self._file.write((wifipack))
@@ -30,19 +28,20 @@ class fileGen:
 
 
 def deleteFiles(path, ids):
+    base = Path(path)
     for id in ids:
-        filename = path + '/' + str(id) + '.ls'
+        filename = base / (str(id) + '.ls')
         try:
-            os.remove(filename)
+            filename.unlink()
         except Exception:
             traceback.print_exc()
 
 class scriptsGenerator(Thread):
     def __init__(self, path, append = False):
-        super(scriptsGenerator, self).__init__()   
+        super(scriptsGenerator, self).__init__(daemon=True)   
         self._running = True
         self._end = False
-        self._path    = path
+        self._path    = Path(path)
         self._append  = append
         self._filelist = {}
 
@@ -51,22 +50,24 @@ class scriptsGenerator(Thread):
 
     def run(self):
         while self._running:
-            while not AtomRepo.isempty():
-                try:
-                    zigbeepack = AtomRepo.getNext()
-                    element = (wifiPack).from_buffer_copy(zigbeepack.payload)
-                    if element.pack_header.reg == 152:
-                        self._end = True
-                        break
-                    uavid = zigbeepack.zigbee_header.address + zigbeepack.zigbee_header.group * 1000
-                    if str(uavid) not in self._filelist.keys():
-                        self._filelist[str(uavid)] = fileGen(self._path, uavid, self._append)
-                        dummy = wifiPack(0, 0, 0, dummyPayload())
-                        self._filelist[str(uavid)].write(dummy)
-                    
-                    self._filelist[str(uavid)].write(element)
-                except Exception:
-                    traceback.print_exc()
+            try:
+                zigbeepack = AtomRepo.getNext(timeout=0.05)
+            except AtomRepo.Empty:
+                continue
+            try:
+                element = (wifiPack).from_buffer_copy(zigbeepack.payload)
+                if element.pack_header.reg == 152:
+                    self._end = True
+                    break
+                uavid = zigbeepack.zigbee_header.address + zigbeepack.zigbee_header.group * 1000
+                if str(uavid) not in self._filelist.keys():
+                    self._filelist[str(uavid)] = fileGen(self._path, uavid, self._append)
+                    dummy = wifiPack(0, 0, 0, dummyPayload())
+                    self._filelist[str(uavid)].write(dummy)
+                
+                self._filelist[str(uavid)].write(element)
+            except Exception:
+                traceback.print_exc()
 
         for f in self._filelist.values():
             try:
@@ -74,22 +75,26 @@ class scriptsGenerator(Thread):
             except Exception:
                 traceback.print_exc()
 
-    def stop(self):
-        while not self._end:
-            pass
+    def stop(self, timeout=5):
+        deadline = time.monotonic() + timeout
+        while not self._end and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if not self._end:
+            raise TimeoutError("mission generation did not receive GenLsEnd")
         self._running = False
 
 class scriptsTransfer(Thread):
     def __init__(self, path, o = None):
-        super(scriptsTransfer, self).__init__()
-        self._path = path
+        super(scriptsTransfer, self).__init__(daemon=True)
+        self._path = Path(path)
         self._readbytes = 512
         self.flight = None
         self.vo = o
 
     def _startTrans(self, filename):
-        size = os.path.getsize(filename) + 4
-        uavid = int(filename.split('\\')[-1].split('.')[0])
+        filename = Path(filename)
+        size = filename.stat().st_size + 4
+        uavid = int(filename.stem)
         atom = Transfer(self.flight, 1, size, uavid)
         #print("\r\n[S]> " + repr(atom))
         self.transfer((atom))
@@ -100,13 +105,17 @@ class scriptsTransfer(Thread):
             self.vo.send(End_Transfer(self.flight, checksum))
 
     def run(self):
-        if os.path.isdir(self._path):
-            files = os.listdir(self._path)
-            for file in files:
-                if not os.path.isdir(file):
-                    self._deliver(self._path + "\\" + file)
-        else:
-            self._deliver(self._path)
+        try:
+            if self._path.is_dir():
+                files = sorted(path for path in self._path.iterdir() if path.is_file())
+                for file in files:
+                    self._deliver(file)
+            else:
+                self._deliver(self._path)
+        finally:
+            close = getattr(self, "close", None)
+            if close is not None:
+                close()
 
     def _deliver(self, file):
         checksum = 0
@@ -114,8 +123,8 @@ class scriptsTransfer(Thread):
         try:
             filelen = self._startTrans(file)
             Delay(200)
-            f = open(file, 'rb')
-            print("transfering " + file)
+            f = Path(file).open('rb')
+            print("transfering " + str(file))
             sentbytes = 0
             while True:
                 bytes = f.read(self._readbytes)
@@ -159,11 +168,11 @@ class scriptsTransferOverUart(scriptsTransfer):
         self._handle.close()
 
 class scriptsTransferOverSock(scriptsTransfer):
-    def __init__(self, path, serverip, o = None):
+    def __init__(self, path, serverip, o = None, port = 10034, timeout = 2):
         super(scriptsTransferOverSock, self).__init__(path, o)    
         sock = socket(AF_INET, SOCK_STREAM)  
-        #sock.settimeout(1)
-        sock.connect((serverip, 10034))
+        sock.settimeout(timeout)
+        sock.connect((serverip, port))
         self._sock = sock
         uavid = int(serverip.split('.')[2]) * 1000 + int(serverip.split('.')[3])
         self.flight = Flight(uavid)
