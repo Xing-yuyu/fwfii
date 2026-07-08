@@ -4,3 +4,4 @@ from . import utils
 from . import fc
 from . import led
 from . import planning
+from .quick import connect, disconnect,  plan, deliver

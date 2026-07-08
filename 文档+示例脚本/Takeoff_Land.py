@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-from fwfii.fc import *
-from fwfii.utils import Delay
+from gtrfs.fc import *
+from gtrfs.utils import Delay
 
-f1 = Flight(1001)
+f1 = Flight(71101)#ip 192.168.1.1
 
 #SetFlightMode(f1, 2)
 
@@ -27,7 +27,7 @@ Land(f1)
 Delay(5000)
 
 # Disarm
-Disarm(f1)
+Disarm(f1,0,True)
 
 # after 2s
 Delay(2000)

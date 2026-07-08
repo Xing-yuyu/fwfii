@@ -121,14 +121,22 @@ class AtomDelivery:
 
     def resume(self):
         self._pause_sending = False
-    
+
     def close(self):
         try:
             self._sending = False
             self._receiving = False
-            self.s.join()
-            self.r.join()
-            self._handle_.close()
+            self._connecting = False
+            self.s.join(timeout=2)
+            self.r.join(timeout=2)
+            if hasattr(self, 'c'):
+                self.c.join(timeout=2)
+            for client in list(self.client.values()):
+                try:
+                    client.shutdown(2)
+                    client.close()
+                except:
+                    pass
         except Exception:
             traceback.print_exc()
 
@@ -376,11 +384,17 @@ class TcpDelivery(AtomDelivery):
             self._sending = False
             self._receiving = False
             self._connecting = False
-            self.s.join()
-            self.r.join()
-            self.c.join()
-            for client in self.client.values():
-                client.close()
+
+            # 强制关闭所有 socket，让线程从 recv/accept 中退出
+            for client in list(self.client.values()):
+                try:
+                    client.shutdown(2)
+                    client.close()
+                except:
+                    pass
+
+            # 不 join，让线程自然死亡
+            # self.s 和 self.r 会在进程退出时自动清理
         except Exception:
             traceback.print_exc()
 

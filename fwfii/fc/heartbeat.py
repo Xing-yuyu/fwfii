@@ -65,12 +65,10 @@ class HeartBeat:
                     #time.sleep(self.INTERVAL / len(self.flights) - (time.clock() - ct))
                     #print("*****************************_beating_")
         print("HeartBeat _beating_ end...\n")
-        
-    
 
     def close(self):
         try:
             self._sending = False
-            self.t.join()                
+            # 不等了
         except Exception:
             traceback.print_exc()

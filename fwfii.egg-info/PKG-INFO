@@ -1,9 +1,0 @@
-Metadata-Version: 2.4
-Name: fwfii
-Version: 1.0.2
-Summary: Fii drone flight control library for F400/F600
-Requires-Python: >=3.6
-Requires-Dist: pyserial>=3.5
-Dynamic: requires-dist
-Dynamic: requires-python
-Dynamic: summary
