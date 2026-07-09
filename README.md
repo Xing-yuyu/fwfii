@@ -24,20 +24,19 @@ pip install -e .
 ## 快速开始
 
 ```python
-from fwfii.quick import connect, disconnect
-from fwfii.fc import *
-from fwfii.led.lamp import AllOn, AllOff
-from fwfii.utils import Delay
+from fwfii import connect, disconnect, Flight
+from fwfii import Arm, Takeoff, Land, ProgrammingMode, Delay
+from fwfii import AllOn, AllOff, GREEN
 
 # 连接 (uavid = group*1000+number, IP = 192.168.group.number)
 d, h, f1 = connect(71101)
 f1.position = (20, 20, 0, 0)
 
 # 飞行
-ProgrammingMode(f1)
+ProgrammingMode(f1); Delay(500)
 Arm(f1); Delay(2000)
-AllOn(f1, 0x00FF00)       # 绿灯
-Takeoff(f1, 80)            # 起飞 80cm
+AllOn(f1, GREEN)            # 绿灯
+Takeoff(f1, 80)             # 起飞 80cm
 Delay(4000)
 Land(f1); Delay(5000)
 AllOff(f1)
@@ -46,20 +45,17 @@ Disarm(f1)
 disconnect()
 ```
 
-## connect / disconnect
+顶层包 `fwfii` 已导出所有常用 API，一行导入即可：
 
 ```python
-from fwfii.quick import connect, disconnect
-
-# 单机
-d, h, f1 = connect(98101)
-
-# 多机 (共享一条 TcpDelivery + HeartBeat)
-d1, h1, f1 = connect(98101)
-d2, h2, f2 = connect(98102)
-
-# 断开全部
-disconnect()
+from fwfii import (
+    connect, disconnect, plan, deliver,   # 快捷操作
+    Flight,                                # 无人机
+    Arm, Disarm, Takeoff, Land, Move2,    # 飞行指令
+    Delay,                                 # 延时
+    AllOn, AllOff, RED, GREEN, BLUE,      # LED + 颜色
+    start_log, stop_log,                   # 遥测
+)
 ```
 
 ## 飞行指令
@@ -115,15 +111,12 @@ disconnect()
 ## LED 灯光
 
 ```python
-from fwfii.led.lamp import (
+from fwfii import (
     AllOn, AllOff, AllBlink, AllBreath,
     BodyOn, BodyOff, BodyBlink, BodyBreath,
-    MotorOn, MotorOff, MotorBlink, MotorBreath, MotorHorse
+    MotorOn, MotorOff, MotorBlink, MotorBreath, MotorHorse,
+    RED, GREEN, BLUE, YELLOW, WHITE,
 )
-
-# 颜色: 0xRRGGBB
-RED = 0xFF0000; GREEN = 0x00FF00; BLUE = 0x0000FF
-YELLOW = 0xFFFF00; WHITE = 0xFFFFFF
 
 AllOn(f1, RED)                     # 全灯常亮
 AllBlink(f1, BLUE, 300, 300)       # 全灯闪烁 (on/off ms)
@@ -139,7 +132,7 @@ AllOff(f1)                         # 灭灯
 ### 编译
 
 ```python
-from fwfii.quick import plan
+from fwfii import plan
 
 plan("my_mission.py", "./output")
 # → output/71101.ls
@@ -148,8 +141,8 @@ plan("my_mission.py", "./output")
 任务脚本 (`my_mission.py`) 使用绝对时间戳 `ts`:
 
 ```python
-from fwfii.fc import Flight, Takeoff, Land, Move2, Arm, Disarm
-from fwfii.led.lamp import AllOn, AllOff
+from fwfii import Flight, Arm, Disarm, Takeoff, Land, Move2
+from fwfii import AllOn, AllOff, GREEN
 
 f1 = Flight(71101)
 
@@ -165,7 +158,7 @@ AllOff(f1, ts=19500)
 ### 上传
 
 ```python
-from fwfii.quick import deliver
+from fwfii import deliver
 
 deliver(71101, "./output")
 # → Transfer 头 + 文件数据 → port 10034
@@ -174,9 +167,7 @@ deliver(71101, "./output")
 ### 执行
 
 ```python
-from fwfii.quick import connect, disconnect
-from fwfii.fc import PlanningMode, MissionStart
-from fwfii.utils import Delay
+from fwfii import connect, disconnect, PlanningMode, MissionStart, Delay
 
 d, h, f1 = connect(71101)
 PlanningMode(f1); Delay(500)
@@ -188,7 +179,7 @@ disconnect()
 ## 遥测记录
 
 ```python
-from fwfii.quick import start_log, stop_log
+from fwfii import start_log, stop_log
 
 start_log(save_dir="./flight_logs", script_path=__file__)
 # ... 飞行 ...
@@ -201,7 +192,7 @@ stop_log()
 ## 音乐播放 (蜂群表演)
 
 ```python
-from fwfii.quick import load_music, play_music, stop_music, set_music_volume
+from fwfii import load_music, play_music, stop_music, set_music_volume
 
 load_music("music.flac")
 set_music_volume(0.7)
@@ -212,18 +203,22 @@ stop_music(fade_ms=2000)
 
 ## 示例脚本
 
-| 文件 | 说明 |
-|:---|:---|
-| `examples/test_40x40_flight.py` | 40×40 定位毯起降测试 |
-| `examples/test_40x40_deliver.py` | plan→deliver→execute 完整流程 |
-| `examples/swarm_dance.py` | 双机编队舞蹈 (灯光+音乐+空翻) |
-| `examples/multi_point_flight.py` | 25 点多速采集 |
-| `examples/trajectory_collect.py` | 网格/螺旋/阶梯航线 |
-| `examples/connect_and_fly.py` | 最简飞行 |
-| `examples/fly_with_carpet.py` | 定位毯正方形航线 |
-| `examples/led_test.py` | LED 通信测试 |
-| `examples/monitor_position.py` | 实时位置监控 |
-| `examples/emergency_stop.py` | 紧急停机 |
+| 目录 | 文件 | 说明 |
+|:---|:---|:---|
+| — | `beginner_guide.py` | ★ 新手大全 (10 节交互式教程) |
+| `01_basics/` | `hello_drone.py` | 连接→起飞→悬停→降落 |
+| | `led_test.py` | LED 通信测试 |
+| | `monitor_position.py` | 实时位置监控 |
+| | `emergency_stop.py` | 紧急停机 |
+| `02_carpet_flight/` | `simple_square.py` | 定位毯正方形航线 |
+| | `multi_point_flight.py` | 25 点多速采集 |
+| | `trajectory_collect.py` | 网格/螺旋/阶梯航线 |
+| | `fly_no_carpet.py` | 无定位毯相对飞行 |
+| `03_mission/` | `compile_and_upload.py` | plan→deliver→execute 完整流程 |
+| `04_swarm/` | `dance_duet.py` | 双机编队舞蹈 (灯光+音乐+空翻) |
+| `05_utils/` | `connect_and_fly.py` | 最简飞行 |
+| | `test_battery.py` | 电池测试 |
+| `missions/` | `square_mission.py` | 离线任务脚本 (给 plan 编译用) |
 
 ## 无人机 ID 规则
 
