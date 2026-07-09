@@ -17,9 +17,12 @@ class AtomRepo:
         AtomRepo._lock.release()
 
     @staticmethod
-    def getNext():
+    def getNext(timeout=None):
         #AtomRepo._lock.acquire()
-        item = AtomRepo._fifo.get()
+        try:
+            item = AtomRepo._fifo.get(timeout=timeout)
+        except:
+            return None
         #AtomRepo._lock.release()
         return item
 

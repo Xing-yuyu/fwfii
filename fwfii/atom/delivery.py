@@ -82,6 +82,10 @@ class AtomDelivery:
                         elif (state.reg == 4):
                             #print("[R]< " + repr(state))
                             HeartBeat.flights[uavid].obtainStatus(state.payload)
+                        elif (state.reg == 8):
+                            # Battery percentage at payload[3] (0-100)
+                            bat_pct = state.payload[3]
+                            HeartBeat.flights[uavid].voltage = bat_pct
                         elif (state.reg == 100):
                             lat = state.payload[3] + (state.payload[4] << 8) + (state.payload[5] << 16) + (state.payload[6] << 24)
                             lng = state.payload[7] + (state.payload[8] << 8) + (state.payload[9] << 16) + (state.payload[10] << 24)
@@ -114,6 +118,8 @@ class AtomDelivery:
         return self._handle_.read(count)
         
     def writebytes(self, buf):
+        if not isinstance(buf, (bytes, bytearray, memoryview)):
+            buf = bytes(buf)
         return self._handle_.write(buf)
 
     def pause(self):
@@ -121,14 +127,22 @@ class AtomDelivery:
 
     def resume(self):
         self._pause_sending = False
-    
+
     def close(self):
         try:
             self._sending = False
             self._receiving = False
-            self.s.join()
-            self.r.join()
-            self._handle_.close()
+            self._connecting = False
+            self.s.join(timeout=2)
+            self.r.join(timeout=2)
+            if hasattr(self, 'c'):
+                self.c.join(timeout=2)
+            for client in list(self.client.values()):
+                try:
+                    client.shutdown(2)
+                    client.close()
+                except:
+                    pass
         except Exception:
             traceback.print_exc()
 
@@ -165,36 +179,49 @@ class TcpDelivery(AtomDelivery):
             print("[Err]: connect to {} failed".format(destaddr[0]))
             
     def __connectServeritem__(self, destaddr, atom):
-        while self._connecting and destaddr in self.server.keys():
-            if not self.server[destaddr][0]:
+        max_retries = 20
+        for attempt in range(max_retries):
+            if not self._connecting:
+                break
+            if destaddr not in self.server:
+                break  # Connection was removed by another path
+            if self.server[destaddr][0]:
+                break  # Already connected by another thread
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                sock.settimeout(1)
+                print("Try to connect:" + repr(destaddr[0]))
+                sock.connect(destaddr)
+                self._notification(destaddr, 1)
+                #sock.setblocking(0)
+                self.client[destaddr] = sock
+                self.server[destaddr] = (True, None)
+                self.writebytes(destaddr, atom)
+                return  # Success
+            except Exception:
                 try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                    sock.settimeout(1)
-                    print("Try to connect:" + repr(destaddr[0])) 
-                    sock.connect(destaddr)
-                    self._notification(destaddr, 1)
-                    #sock.setblocking(0)
-                    self.client[destaddr] = sock
-                    self.server[destaddr] = (True, None)
-                    self.writebytes(destaddr, atom)
-                except Exception:
                     sock.close()
-                    #traceback.print_exc()
-                    self._notification(destaddr, 0)
-            else:
-                time.sleep(0.1)
+                except Exception:
+                    pass
+                self._notification(destaddr, 0)
+                time.sleep(0.5)  # Delay between retries
+        # Max retries exceeded or connection removed
+        if destaddr in self.server and not self.server[destaddr][0]:
+            print(f"[Err]: Failed to connect to {destaddr[0]} after retries")
+            self.server.pop(destaddr, None)
+        self.connect_threads.pop(destaddr, None)
 
     @staticmethod
     def disconnectnotification(destaddr):
         from fwfii.fc import HeartBeat
         addr = destaddr[0].split('.')
         uavid = int(addr[2]) * 1000 + int(addr[3])
-        HeartBeat.flights[uavid].fcstatus = "N/A" 
-        HeartBeat.flights[uavid].flightmode = "N/A"
-        HeartBeat.flights[uavid].gpsstatus = "NO_GPS"
-        #HeartBeat.flights[uavid].reset()
+        if uavid in HeartBeat.flights:
+            HeartBeat.flights[uavid].fcstatus = "N/A"
+            HeartBeat.flights[uavid].flightmode = "N/A"
+            HeartBeat.flights[uavid].gpsstatus = "NO_GPS"
         
 
     def __sending__(self):
@@ -203,11 +230,13 @@ class TcpDelivery(AtomDelivery):
             try:
                 #AtomRepo.lock()
                 if self._pause_sending:
-                    AtomRepo.unlock()
+                    time.sleep(0.1)
                     continue
-                
+
                 #if not AtomRepo.isempty():
-                zigbeepack = AtomRepo.getNext()
+                zigbeepack = AtomRepo.getNext(timeout=1)
+                if zigbeepack is None:
+                    continue  # Timeout, loop back to check _sending
                 self.atom = zigbeepack  
                 #print("[zigbeepack] {}\n".format(zigbeepack.payload[6]))
                 if zigbeepack.payload[6] == 124:
@@ -234,7 +263,7 @@ class TcpDelivery(AtomDelivery):
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                     sock.bind(localaddr)
-                    sock.sendto(self.atom, destaddr)
+                    sock.sendto(bytes(self.atom), destaddr)
                     sock.close()
                 else:
                     destaddr = ('192.168.{}.{}'.format(zigbeepack.zigbee_header.group, zigbeepack.zigbee_header.address), 10014)
@@ -272,7 +301,14 @@ class TcpDelivery(AtomDelivery):
                     continue
                 readable, writable, exceptional = select.select(list(self.client.values()),[],[], 1)
                 for conn in readable:
-                    destaddr = list(self.client.keys())[list(self.client.values()).index(conn)]
+                    # Find destaddr for this connection (handle closed sockets)
+                    destaddr = None
+                    for addr, c in list(self.client.items()):
+                        if c is conn:
+                            destaddr = addr
+                            break
+                    if destaddr is None:
+                        continue
                     #print("[DEBUG] {}\n".format(destaddr))
                     if conn in self.cache.keys():
                         msg = self.cache[conn]
@@ -329,7 +365,15 @@ class TcpDelivery(AtomDelivery):
                                 #HeartBeat.flights[uavid].setBase(lat, lng, alt)
                                 HeartBeat.flights[uavid].rtkbaseloc = (lat, lng, alt)
                             elif (state.reg == 8):
-                                voltage = state.payload[3] + (state.payload[4] << 8) + (state.payload[5] << 16) + (state.payload[6] << 24)
+                                raw_hex = ' '.join(f'{b:02x}' for b in state.payload[:13])
+                                voltage = state.payload[0] + (state.payload[1] << 8)
+                                debug_cnt = getattr(HeartBeat.flights[uavid], '_vdc', 0)
+                                if debug_cnt < 3:
+                                    HeartBeat.flights[uavid]._vdc = debug_cnt + 1
+                                    print(f"[DEBUG#{debug_cnt}] uav={uavid} reg=8 rw={state.rw} raw[13]={raw_hex}")
+                                    print(f"[DEBUG#{debug_cnt}]   [0-1]16={voltage}  [2-3]16={state.payload[2] + (state.payload[3] << 8)}")
+                                    print(f"[DEBUG#{debug_cnt}]   [0-3]32={state.payload[0] + (state.payload[1]<<8) + (state.payload[2]<<16) + (state.payload[3]<<24)}")
+                                    print(f"[DEBUG#{debug_cnt}]   [4-7]32={state.payload[4] + (state.payload[5]<<8) + (state.payload[6]<<16) + (state.payload[7]<<24)}")
                                 HeartBeat.flights[uavid].voltage = voltage
                             if self.vo and self.vo.avalible():
                                 self.vo.send((state))
@@ -347,21 +391,33 @@ class TcpDelivery(AtomDelivery):
         print("AtomDelivery __receiving__ end...\n")                
     
     def _closeConnection(self, destaddr):
-        if self.client[destaddr] in self.cache.keys():
-            self.cache.pop(self.client[destaddr], None)
-        self.client[destaddr].close()
-        self.client.pop(destaddr, None)
+        conn = self.client.pop(destaddr, None)
+        if conn is not None:
+            if conn in self.cache:
+                self.cache.pop(conn, None)
+            try:
+                conn.shutdown(2)
+                conn.close()
+            except Exception:
+                pass
         self.server.pop(destaddr, None)
+        self.connect_threads.pop(destaddr, None)
         self.disconnectnotification(destaddr)
 
     def writebytes(self, destaddr, packet):
+        if not self._sending:
+            return
         try:
-            if(self.server[destaddr][0]):
-                self.client[destaddr].sendall(packet)
-                #print("[S]> " + repr(packet))
-        except:
-            self._closeConnection(destaddr)
-            traceback.print_exc()
+            if destaddr in self.server and self.server[destaddr][0]:
+                if destaddr in self.client:
+                    if not isinstance(packet, (bytes, bytearray, memoryview)):
+                        packet = bytes(packet)
+                    self.client[destaddr].sendall(packet)
+                    #print("[S]> " + repr(packet))
+        except Exception:
+            if self._sending:
+                self._closeConnection(destaddr)
+                traceback.print_exc()
 
     def _readbytes(self, conn, count):
         try:
@@ -376,11 +432,17 @@ class TcpDelivery(AtomDelivery):
             self._sending = False
             self._receiving = False
             self._connecting = False
-            self.s.join()
-            self.r.join()
-            self.c.join()
-            for client in self.client.values():
-                client.close()
+
+            # 强制关闭所有 socket，让线程从 recv/accept 中退出
+            for client in list(self.client.values()):
+                try:
+                    client.shutdown(2)
+                    client.close()
+                except:
+                    pass
+
+            # 不 join，让线程自然死亡
+            # self.s 和 self.r 会在进程退出时自动清理
         except Exception:
             traceback.print_exc()
 
@@ -434,6 +496,8 @@ class UdpDelivery(AtomDelivery):
         return data
         
     def writebytes(self, buf):
+        if not isinstance(buf, (bytes, bytearray, memoryview)):
+            buf = bytes(buf)
         return self._handle_.sendto(buf, self.destaddr)
           
 '''        

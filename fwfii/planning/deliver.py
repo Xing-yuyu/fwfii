@@ -23,7 +23,9 @@ class fileGen:
             self._file = open(path + '/' + str(id) + '.ls', 'wb')
 
     def write(self, wifipack):
-        self._file.write((wifipack))
+        if not isinstance(wifipack, (bytes, bytearray, memoryview)):
+            wifipack = bytes(wifipack)
+        self._file.write(wifipack)
 
     def close(self):
         self._file.close()
@@ -151,6 +153,8 @@ class scriptsTransferOverUart(scriptsTransfer):
 
     def transfer(self, buf):
         try:
+            if not isinstance(buf, (bytes, bytearray, memoryview)):
+                buf = bytes(buf)
             self._handle.write(buf)
         except Exception:
             traceback.print_exc()
@@ -170,6 +174,8 @@ class scriptsTransferOverSock(scriptsTransfer):
 
     def transfer(self, buf):
         try:
+            if not isinstance(buf, (bytes, bytearray, memoryview)):
+                buf = bytes(buf)
             self._sock.sendall(buf)
         except Exception:
             traceback.print_exc()

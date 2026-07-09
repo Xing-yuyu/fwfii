@@ -629,8 +629,8 @@ def SimpleHarmonic2(flight, axis, amp=50, omega=90, phase=0, loop=1, ts=0):
 # omega, 90, 180, 360
 #
 def SimpleHarmonic(flight, axis, x, y, z, amp=50, omega=90, phase=0, loop=1, ts=0, emergency=False):
-    '''
-    Make the flight do a simple harmonic movement along with the specified axis.    
+    r'''
+    Make the flight do a simple harmonic movement along with the specified axis.
 
     $$
     y = A*sin(\omega*t+\phi)
@@ -667,7 +667,7 @@ def SimpleHarmonic(flight, axis, x, y, z, amp=50, omega=90, phase=0, loop=1, ts=
         elif axis == 'y':
             y_ = amp * sin(2 * pi * freq * t + phase) + y
             Move2(flight, x, int(y_), z, int(ts + t * 1000 + 100), emergency)
-        elif axis == '-x':
+        elif axis == '-y':
             y_ = -amp * sin(2 * pi * freq * t + phase) + y
             Move2(flight, x, int(y_), z, int(ts + t * 1000 + 100), emergency)
         elif axis == 'z':

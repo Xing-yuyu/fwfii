@@ -6,7 +6,7 @@ from fwfii.fc.heartbeat import HeartBeat
 from fwfii.fc import Flight
 import time
 
-DRONE_ID = 71101
+DRONE_ID = 98101
 
 print("连接无人机...")
 d = TcpDelivery(vo=None)

@@ -222,7 +222,10 @@ class wifiPack(ctypes.LittleEndianStructure):
         return ctypes.string_at(ctypes.addressof(self), ctypes.sizeof(self))
 
     def __repr__(self):
-        return ''.join('{:02x} '.format(x) for x in (ctypes.c_uint8 * ctypes.sizeof(self)).from_buffer_copy((self)))  
+        return ''.join('{:02x} '.format(x) for x in (ctypes.c_uint8 * ctypes.sizeof(self)).from_buffer_copy((self)))
+
+    def __bytes__(self):
+        return ctypes.string_at(ctypes.addressof(self), ctypes.sizeof(self))
 
 class zigbeePack(ctypes.LittleEndianStructure):
     _pack_   = 1
@@ -248,6 +251,9 @@ class zigbeePack(ctypes.LittleEndianStructure):
 
     def __repr__(self):
         return ''.join('{:02x} '.format(x) for x in (ctypes.c_uint8 * ctypes.sizeof(self)).from_buffer_copy((self)))
+
+    def __bytes__(self):
+        return ctypes.string_at(ctypes.addressof(self), ctypes.sizeof(self))
 
 
 class uavPack(ctypes.LittleEndianStructure):
@@ -276,7 +282,10 @@ class uavPack(ctypes.LittleEndianStructure):
         return ctypes.string_at(ctypes.addressof(self), ctypes.sizeof(self))
 
     def __repr__(self):
-        return ''.join('{:02x} '.format(x) for x in (ctypes.c_uint8 * ctypes.sizeof(self)).from_buffer_copy((self)))    
+        return ''.join('{:02x} '.format(x) for x in (ctypes.c_uint8 * ctypes.sizeof(self)).from_buffer_copy((self)))
+
+    def __bytes__(self):
+        return ctypes.string_at(ctypes.addressof(self), ctypes.sizeof(self))
 
 class failsSafePack(ctypes.LittleEndianStructure):
     _pack_ = 1

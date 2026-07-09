@@ -355,7 +355,7 @@ class End_Transfer(uavPack):
 
 class End_Transfer2(zigbeePack):
     def __init__(self, flight, checksum):
-        super(End_Transfer, self).__init__(flight, wifiPack(0, 66, 1, flightPayload(0, checksum, 0, 0)))   
+        super(End_Transfer2, self).__init__(flight, wifiPack(0, 66, 1, flightPayload(0, checksum, 0, 0)))   
 
 
 #

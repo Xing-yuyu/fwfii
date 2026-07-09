@@ -35,8 +35,8 @@ class Flight:
         return str(self.uavid)
 
     def reset(self):
-        self._fcstatus = "N\A"
-        self._flightmode = "N\A"
+        self._fcstatus = "N/A"
+        self._flightmode = "N/A"
         self._lastBeatTime = GetCurTime()
         self._x = 0
         self._y = 0
@@ -47,7 +47,7 @@ class Flight:
         self._rtkbaselat = 0
         self._rtkbaselng = 0
         self._rtkbasealt = 0
-        self._launchutc = 'N\A'
+        self._launchutc = 'N/A'
         self._gpsstatus = "NO_GPS"
         self._voltage = 0
 
