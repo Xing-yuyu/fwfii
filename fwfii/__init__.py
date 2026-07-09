@@ -61,3 +61,9 @@ PURPLE = 0xFF00FF
 WHITE  = 0xFFFFFF
 ORANGE = 0xFF8000
 PINK   = 0xFF0080
+
+# ── pyfii / gtrfs 兼容 ──
+from .gtrfs_compat import MoveDelta
+
+# ── 蜂群飞行 ──
+from .swarm import SwarmProject
