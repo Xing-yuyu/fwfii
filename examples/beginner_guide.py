@@ -294,51 +294,70 @@ def section_8_swarm():
 
 
 def section_9_mission():
-    """第9节: 离线任务 — plan 编译 + deliver 上传 + 执飞"""
+    """第9节: 离线任务 — plan 编译 + deliver 上传 + 执飞
+
+    ts + Delay 混用规则:
+      - ts=xxx  → 精确卡点 (灯光/音乐同步)
+      - Delay() → 自然等待, 后续指令时间戳自动累加
+      - 两种写法可随意混用, plan() 自动处理
+    """
     print("=" * 50)
-    print("第9节: 离线任务")
+    print("第9节: 离线任务 (ts + Delay 混用)")
     print("=" * 50)
 
-    # ── Step A: 写任务脚本 ──────────────────────────
-    # 用 ts (绝对毫秒) 代替 Delay, 编译时才写入 .ls
     mission_code = '''
-from fwfii import Flight, Arm, Disarm, Takeoff, Land, Move2
+from fwfii import Flight, Arm, Disarm, Takeoff, Land, Move2, Delay
 from fwfii import AllOn, AllOff, GREEN, BLUE, YELLOW
 
 f1 = Flight({drone_id})
 
+# 精确卡点
+AllOn(f1, BLUE, ts=0)
 Arm(f1, ts=500)
-AllOn(f1, GREEN, ts=2500)
-Takeoff(f1, 80, ts=2500)
 
-Move2(f1, 30, 10, 80, ts=7500)
-Move2(f1, 30, 30, 80, ts=10500)
-Move2(f1, 10, 30, 80, ts=13500)
-Move2(f1, 10, 10, 80, ts=16500)
+# 自然等待
+Delay(2000)
 
-Move2(f1, 20, 20, 80, ts=19500)
-AllOn(f1, YELLOW, ts=22500)
-Land(f1, ts=22500)
+# 自动 ts ≈ 2500
+AllOn(f1, GREEN)
+Takeoff(f1, 80)
+Delay(5000)
 
-Disarm(f1, ts=27500)
-AllOff(f1, ts=27500)
+# 航线 (自动累加时间戳)
+Move2(f1, 30, 10, 80)
+Delay(3000)
+Move2(f1, 30, 30, 80)
+Delay(3000)
+Move2(f1, 10, 30, 80)
+Delay(3000)
+Move2(f1, 10, 10, 80)
+Delay(3000)
+
+# 精确卡点灯光 (第 22 秒)
+AllOn(f1, YELLOW, ts=22000)
+Move2(f1, 20, 20, 80)
+Delay(3000)
+
+Land(f1, ts=26000)
+Delay(5000)
+
+AllOff(f1)
+Disarm(f1, ts=32000)
 '''.format(drone_id=DRONE_ID)
 
     os.makedirs("missions", exist_ok=True)
     with open("missions/_tmp_mission.py", "w") as f:
         f.write(mission_code)
 
-    # ── Step B: plan — 编译 .py → .ls ──────────────
-    print("[plan] 编译中...")
+    # ── plan: 编译 .py → .ls ──
+    print("[plan] 编译 (ts+Delay 混用)...")
     plan("missions/_tmp_mission.py", "./missions")
-    # → missions/71101.ls
 
-    # ── Step C: deliver — WiFi 上传 .ls ─────────────
+    # ── deliver: WiFi 上传 ──
     print("[deliver] 上传中...")
     deliver(DRONE_ID, "./missions")
-    # → Transfer 命令 + 文件数据 → port 10034
 
-    # ── Step D: 执飞 (需无人机在面前!) ──────────────
+    # ── 执飞 ──
     print("\n[execute] 连接无人机...")
     d, h, f1 = connect(DRONE_ID)
     f1.position = INIT_POS
@@ -347,9 +366,8 @@ AllOff(f1, ts=27500)
     print("[MissionStart] 无人机自动执行!")
     MissionStart(f1)
 
-    # 监控
     import time
-    for i in range(35):
+    for i in range(40):
         time.sleep(1)
         x, y, z, _ = f1.position
         print(f"  t={i+1:2d}s  ({x:.0f},{y:.0f},{z:.0f})  [{f1.flightmode}]")

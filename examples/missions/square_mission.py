@@ -1,66 +1,68 @@
 """
-40×40 定位毯任务 — plan() 编译用
-================================
-uavid: 71101  范围: XY 0~40cm Z ≤ 200cm
+正方形任务 — ts + Delay 混用
+===============================
+uavid: 71101  范围: 40×40 定位毯
 
-关键: 离线模式下必须用 ts (绝对毫秒时间戳)
-     不能用 Delay() — Delay 不会写入 .ls 文件
+混用规则:
+  - ts=xxx → 精确卡点 (灯光/音乐同步)
+  - ts=0   → 自动从 plan() 开始计时
+  - Delay() → 自然等待, 后续指令的时间戳自动累加
+
+两种写法等价, 可随意混合:
+  纯 ts:   Move2(f1, 30, 10, 80, ts=7500)
+  纯 Delay: Delay(3000); Move2(f1, 30, 10, 80)
+  混用:     AllOn(f1, RED, ts=9000); Delay(2000); Move2(...)
 """
-from fwfii.fc import Flight, Takeoff, Land, Move2, Arm, Disarm, MaxVelXY, MaxVelZ, MaxAccXY, MaxAccZ
-from fwfii.led.lamp import AllOn, AllBlink, AllOff
+from fwfii import Flight, Arm, Disarm, Takeoff, Land, Move2, Delay
+from fwfii import MaxVelXY, MaxVelZ, MaxAccXY, MaxAccZ
+from fwfii import AllOn, AllBlink, AllOff, GREEN, BLUE, RED, YELLOW
 
-DRONE_ID = 71101
-f1 = Flight(DRONE_ID)
+f1 = Flight(71101)
 
-# =========== 时间轴 (ms) ===========
-T0  = 0
-T1  = 500          # 解锁
-T2  = 2500         # 起飞
-T3  = 7500         # → (30,10)
-T4  = 10500        # → (30,30)
-T5  = 13500        # → (10,30)
-T6  = 16500        # → (10,10)
-T7  = 19500        # → (20,20,100)
-T8  = 22500        # → (20,20,60)
-T9  = 24500        # 降落
-T10 = 29500        # 上锁
+# ── 参数 ──
+MaxVelXY(f1, 50)
+MaxVelZ(f1, 30)
+MaxAccXY(f1, 200)
+MaxAccZ(f1, 200)
 
-# 基础参数 (ts 必须递增)
-MaxVelXY(f1, 50, ts=T0)
-MaxVelZ(f1, 30, ts=T0)
-MaxAccXY(f1, 200, ts=T0)
-MaxAccZ(f1, 200, ts=T0)
+# ── 解锁 (精确卡点) ──
+AllBlink(f1, BLUE, 300, 300, ts=0)
+Arm(f1, ts=500)
 
-# 解锁
-AllBlink(f1, 0x0000FF, 300, 300, ts=T0)
-Arm(f1, ts=T1)
+# ── 起飞 ──
+Delay(2000)
+AllOn(f1, GREEN)
+Takeoff(f1, 80)
+Delay(5000)
 
-# 起飞 80cm
-AllOn(f1, 0x00FF00, ts=T2)
-Takeoff(f1, 80, ts=T2)
+# ── 正方形航线 ──
+AllOn(f1, BLUE)
+Move2(f1, 30, 10, 80)
+Delay(3000)
 
-# 正方形航线
-AllOn(f1, 0x0000FF, ts=T3)
-Move2(f1, 30, 10, 80, ts=T3)
+Move2(f1, 30, 30, 80)
+Delay(3000)
 
-Move2(f1, 30, 30, 80, ts=T4)
+Move2(f1, 10, 30, 80)
+Delay(3000)
 
-Move2(f1, 10, 30, 80, ts=T5)
+Move2(f1, 10, 10, 80)
+Delay(3000)
 
-Move2(f1, 10, 10, 80, ts=T6)
+# ── 中心升高 (灯光精确卡第 22 秒) ──
+AllOn(f1, RED, ts=22000)
+Move2(f1, 20, 20, 100)
+Delay(3000)
 
-# 中心升高 100cm
-AllOn(f1, 0xFF0000, ts=T7)
-Move2(f1, 20, 20, 100, ts=T7)
+# ── 下降 ──
+AllOn(f1, GREEN)
+Move2(f1, 20, 20, 60)
+Delay(2000)
 
-# 下降
-AllOn(f1, 0x00FF00, ts=T8)
-Move2(f1, 20, 20, 60, ts=T8)
+# ── 降落 + 上锁 (精确卡点) ──
+AllBlink(f1, YELLOW, 300, 300)
+Land(f1, ts=30000)
+Delay(5000)
 
-# 降落
-AllBlink(f1, 0xFFFF00, 300, 300, ts=T9)
-Land(f1, ts=T9)
-
-# 上锁
-AllOff(f1, ts=T10)
-Disarm(f1, ts=T10)
+AllOff(f1)
+Disarm(f1, ts=36000)

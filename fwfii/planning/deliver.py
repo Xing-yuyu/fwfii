@@ -2,11 +2,14 @@
 from __future__ import division, absolute_import, print_function
 
 import os
+import time
 import traceback
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SOCK_DGRAM, SO_REUSEADDR
 import struct
+import ctypes
 from threading import Thread
 from fwfii.atom import AtomRepo, wifiPack, dummyPayload
+from fwfii.atom.gen import crc
 from fwfii.utils import Delay
 from fwfii.fc import Flight, Transfer, Upgrade_LED, End_Transfer, Upgrade_LED2, Upgrade_FC, Upgrade_RK, End_Transfer2
 
@@ -40,16 +43,49 @@ def deleteFiles(path, ids):
             traceback.print_exc()
 
 class scriptsGenerator(Thread):
-    def __init__(self, path, append = False):
-        super(scriptsGenerator, self).__init__()   
+    """捕获 AtomRepo 中的飞行指令, 编译为 .ls 离线任务文件
+
+    自动时间戳规则:
+        - ts=0 的指令 → 自动赋予从 plan() 开始经过的毫秒数
+        - ts!=0 的指令 → 保留用户指定的时间戳, 并同步内部时钟
+        - Delay() 的睡眠时间自然累加到后续指令的时间戳
+
+    这意味着你可以混合使用:
+        Arm(f1, ts=500)       # 精确卡点 (灯光/音乐同步)
+        Delay(2000)           # 自然等待
+        Takeoff(f1, 80)       # 自动 ts=2500
+    """
+
+    def __init__(self, path, append=False):
+        super(scriptsGenerator, self).__init__()
         self._running = True
         self._end = False
-        self._path    = path
-        self._append  = append
+        self._path = path
+        self._append = append
         self._filelist = {}
+        self._t0 = None          # plan 开始时刻 (perf_counter)
+        self._clock = 0          # 当前虚拟时钟 (ms)
 
     def filelist(self):
         return self._filelist
+
+    def _fix_ts_and_crc(self, element):
+        """如果 ts==0, 替换为虚拟时钟值; 否则同步时钟; 重算 CRC"""
+        if self._t0 is None:
+            self._t0 = time.perf_counter()
+
+        if element.pack_header.ts == 0:
+            # 自动时间戳: 从 plan 开始经过的毫秒
+            self._clock = int((time.perf_counter() - self._t0) * 1000)
+            element.pack_header.ts = self._clock
+        else:
+            # 用户指定了 ts → 同步虚拟时钟, 后续 Delay 从此累加
+            self._clock = element.pack_header.ts
+            self._t0 = time.perf_counter() - self._clock / 1000.0
+
+        # 重算 CRC (因为 ts 字段变了)
+        raw = (ctypes.c_uint8 * ctypes.sizeof(element)).from_buffer_copy(element)
+        element.pack_header.crc = crc(raw[2:ctypes.sizeof(element)])
 
     def run(self):
         while self._running:
@@ -60,12 +96,16 @@ class scriptsGenerator(Thread):
                     if element.pack_header.reg == 152:
                         self._end = True
                         break
+
+                    # 自动时间戳
+                    self._fix_ts_and_crc(element)
+
                     uavid = zigbeepack.zigbee_header.address + zigbeepack.zigbee_header.group * 1000
                     if str(uavid) not in self._filelist.keys():
                         self._filelist[str(uavid)] = fileGen(self._path, uavid, self._append)
                         dummy = wifiPack(0, 0, 0, dummyPayload())
                         self._filelist[str(uavid)].write(dummy)
-                    
+
                     self._filelist[str(uavid)].write(element)
                 except Exception:
                     traceback.print_exc()

@@ -138,21 +138,37 @@ plan("my_mission.py", "./output")
 # → output/71101.ls
 ```
 
-任务脚本 (`my_mission.py`) 使用绝对时间戳 `ts`:
+任务脚本支持 **ts + Delay 混用**，`plan()` 自动为没有 ts 的指令分配时间戳：
 
 ```python
-from fwfii import Flight, Arm, Disarm, Takeoff, Land, Move2
-from fwfii import AllOn, AllOff, GREEN
+from fwfii import Flight, Arm, Disarm, Takeoff, Land, Move2, Delay
+from fwfii import AllOn, AllOff, GREEN, RED
 
 f1 = Flight(71101)
 
-Arm(f1, ts=500)                    # ts=500ms
-Takeoff(f1, 80, ts=2500)           # ts=2500ms
-Move2(f1, 30, 10, 80, ts=7500)    # ts=7500ms
-Move2(f1, 10, 30, 80, ts=10500)
-Land(f1, ts=14500)
-Disarm(f1, ts=19500)
-AllOff(f1, ts=19500)
+# 精确卡点 — 灯光在第 0ms 亮
+AllOn(f1, GREEN, ts=0)
+Arm(f1, ts=500)
+
+# 自然等待 — 后续指令自动累加时间戳
+Delay(2000)                        # ts ≈ 2500
+Takeoff(f1, 80)
+
+Delay(5000)                        # ts ≈ 7500
+Move2(f1, 30, 10, 80)
+
+Delay(3000)                        # ts ≈ 10500
+Move2(f1, 10, 30, 80)
+
+# 混用 — 灯光精确卡第 15 秒, 移动自动跟随
+AllOn(f1, RED, ts=15000)
+Move2(f1, 20, 20, 60)
+
+Delay(3000)
+Land(f1)                           # ts ≈ 18000
+
+Delay(5000)
+Disarm(f1)                         # ts ≈ 23000
 ```
 
 ### 上传
