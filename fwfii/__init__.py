@@ -15,6 +15,7 @@ from .quick import connect, disconnect, plan, deliver, mission_start
 
 # ── 飞行核心 ──
 from .fc import Flight
+from .fc.position_viewer import PositionViewer
 from .fc.basic import (
     Arm, Disarm, Takeoff, Land, Stop,
     Move2, Forward, Backward, Left, Right, Up, Down, Hover,
@@ -45,6 +46,22 @@ from .utils import Delay, GetCurMs, GetCurTime
 
 # ── 遥测 / 音乐 ──
 from .utils.logger import start_log, stop_log, is_logging, FlightLogger
+from .fc.heartbeat import HeartBeat
+
+def set_beat_output(mode):
+    """
+    设置心跳控制台输出模式。
+
+    Parameters
+    ----------
+    mode : str
+        'normal' — 每次心跳都输出 (~5 Hz)
+        'slow'   — 每秒最多输出一次
+        'off'    — 不输出到控制台（位置文件和 logger 不受影响）
+    """
+    HeartBeat.SetOutputMode(mode)
+
+
 from .utils.music import (
     load_music, play_music, stop_music,
     pause_music, unpause_music,

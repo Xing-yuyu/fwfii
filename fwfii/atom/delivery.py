@@ -365,16 +365,9 @@ class TcpDelivery(AtomDelivery):
                                 #HeartBeat.flights[uavid].setBase(lat, lng, alt)
                                 HeartBeat.flights[uavid].rtkbaseloc = (lat, lng, alt)
                             elif (state.reg == 8):
-                                raw_hex = ' '.join(f'{b:02x}' for b in state.payload[:13])
-                                voltage = state.payload[0] + (state.payload[1] << 8)
-                                debug_cnt = getattr(HeartBeat.flights[uavid], '_vdc', 0)
-                                if debug_cnt < 3:
-                                    HeartBeat.flights[uavid]._vdc = debug_cnt + 1
-                                    print(f"[DEBUG#{debug_cnt}] uav={uavid} reg=8 rw={state.rw} raw[13]={raw_hex}")
-                                    print(f"[DEBUG#{debug_cnt}]   [0-1]16={voltage}  [2-3]16={state.payload[2] + (state.payload[3] << 8)}")
-                                    print(f"[DEBUG#{debug_cnt}]   [0-3]32={state.payload[0] + (state.payload[1]<<8) + (state.payload[2]<<16) + (state.payload[3]<<24)}")
-                                    print(f"[DEBUG#{debug_cnt}]   [4-7]32={state.payload[4] + (state.payload[5]<<8) + (state.payload[6]<<16) + (state.payload[7]<<24)}")
-                                HeartBeat.flights[uavid].voltage = voltage
+                                # Battery percentage at payload[3] (0-100)
+                                bat_pct = state.payload[3]
+                                HeartBeat.flights[uavid].voltage = bat_pct
                             if self.vo and self.vo.avalible():
                                 self.vo.send((state))
                             msg = b""

@@ -5,15 +5,17 @@ with open("README.md", encoding="utf-8") as f:
 
 setup(
     name="fwfii",
-    version="1.1.0",
+    version="1.1.1",
     description="Fii Drone Flight Control SDK for F400/F600",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="fwfii",
-    url="https://github.com/yourusername/fwfii",
+    url="https://github.com/Kevin0412/fwfii",
     packages=find_packages(exclude=["examples", "tests"]),
     install_requires=[
         "pyserial>=3.5",
+        "numpy",
+        "opencv-python",
     ],
     python_requires=">=3.6",
     classifiers=[

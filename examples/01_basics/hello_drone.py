@@ -12,7 +12,7 @@ from fwfii.utils import Delay
 
 # ============ 配置 ============
 DRONE_ID = 71101
-INIT_POS = (20, 20, 0, 0)      # 原点设为毯子中心
+INIT_POS = (5, 5, 0, 0)      # 原点设为毯子中心
 
 # 颜色
 RED = 0xFF0000
@@ -28,7 +28,7 @@ def main():
 
     # 1. 连接
     d, h, f1 = connect(DRONE_ID)
-    f1.position = INIT_POS
+    f1.set_init_pos(INIT_POS[0], INIT_POS[1])  # 毯子中心
 
     # 2. 设置
     ProgrammingMode(f1)
@@ -46,7 +46,7 @@ def main():
     # 4. 起飞 → 绿灯呼吸, 飞到 60cm
     print("[起飞 → 60cm]")
     AllBreath(f1, GREEN, 600, 600)
-    Takeoff(f1, 60)
+    Takeoff(f1, 100)
     Delay(4000)
 
     # 5. 悬停 → 金色常亮
@@ -57,13 +57,13 @@ def main():
     # 6. 上升 → 白色
     print("[上升 → 80cm]")
     AllOn(f1, WHITE)
-    Move2(f1, 20, 20, 80)
+    Move2(f1, 5, 5, 150)
     Delay(3000)
 
     # 7. 下降 → 红色呼吸
     print("[下降 → 60cm]")
     AllBreath(f1, RED, 600, 600)
-    Move2(f1, 20, 20, 60)
+    Move2(f1, 5, 5, 100)
     Delay(2000)
 
     # 8. 降落

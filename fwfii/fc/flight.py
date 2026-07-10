@@ -50,6 +50,7 @@ class Flight:
         self._launchutc = 'N/A'
         self._gpsstatus = "NO_GPS"
         self._voltage = 0
+        self._prev_z = 0
 
     @property
     def uavid(self):
@@ -74,6 +75,74 @@ class Flight:
     @position.setter
     def position(self, value):
         self._y, self._x, self._z, self._yaw = value[0] * 0.01, value[1] * 0.01, value[2] * 0.01, value[3] * 0.01
+
+    def set_init_pos(self, x, y):
+        """Set the physical takeoff position on carpet (cm)."""
+        self._init_x = x
+        self._init_y = y
+        self._pos_locked = False
+        self._landing = False
+        self._prev_z = 0
+        self._land_x = None
+        self._land_y = None
+        self._last_good_x = None
+        self._last_good_y = None
+
+    @property
+    def display_position(self):
+        """Position for display — masks ghost XY with init/last-good values.
+
+        - On ground:      init XY (before 1st flight) or last landing XY
+        - Taking off:     init XY until position lock acquired
+        - Flying locked:  real XY
+        - Landing:        XY frozen at landing-trigger moment (rapid descent)
+        """
+        real = self.position  # (x, y, z, yaw) cm
+        on_ground = abs(real[2]) <= 5
+        dz = real[2] - self._prev_z
+
+        if not hasattr(self, '_init_x'):
+            self._prev_z = real[2]
+            return real
+
+        # ── detect position lock ──
+        if not self._pos_locked and not on_ground:
+            airborne = real[2] > 15
+            dist_from_ghost = ((real[0] - 22)**2 + (real[1] - 24)**2)**0.5
+            if airborne or dist_from_ghost > 20:
+                self._pos_locked = True
+
+        # detect landing: rapid descent (>15cm drop) while locked
+        if self._pos_locked and not self._landing and dz < -15:
+            self._landing = True
+            self._land_x = real[0]
+            self._land_y = real[1]
+
+        # ── exit landing on ascent back to altitude ──
+        if self._landing and real[2] > 30:
+            self._landing = False
+
+        # ── save last good XY while flying stable ──
+        if self._pos_locked and not self._landing and real[2] > 10:
+            self._last_good_x = real[0]
+            self._last_good_y = real[1]
+
+        # ── choose display XY ──
+        if on_ground:
+            if self._pos_locked:
+                self._pos_locked = False
+                self._landing = False
+            x = self._last_good_x if self._last_good_x is not None else self._init_x
+            y = self._last_good_y if self._last_good_y is not None else self._init_y
+        elif self._landing:
+            x, y = self._land_x, self._land_y
+        elif not self._pos_locked:
+            x, y = self._init_x, self._init_y
+        else:
+            x, y = real[0], real[1]
+
+        self._prev_z = real[2]
+        return (x, y, real[2], real[3])
 
     @property
     def fcstatus(self):
@@ -177,14 +246,15 @@ class Flight:
             self.maporigin = (0, 0)
 
     def printInfo(self):
-        x = self.position[1]
-        y = self.position[0]
-        z = self.position[2]
+        dp = self.display_position
+        x = dp[1]
+        y = dp[0]
+        z = dp[2]
         if self.maporigin[0] == 0 and self.maporigin[1] == 0:
             x *= 1e-7
             y *= 1e-7
         
-        return [self.flightmode, int(self.voltage) * 0.001, self.gpsstatus, self.fcstatus, x, y, z, self.position[3], self.maporigin]
+        return [self.flightmode, int(self.voltage), self.gpsstatus, self.fcstatus, x, y, z, self.position[3], self.maporigin]
     
    
         

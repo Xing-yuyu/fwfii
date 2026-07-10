@@ -61,7 +61,7 @@ class Monitor:
                     for x, y, z, c in zip(xs, ys, zs, colors):
                         ax.scatter(x, y, z, color = c, marker='o')
                 table = pd.DataFrame.from_dict(info, orient = "index", \
-                    columns = ["flightmode", "voltage", "gpsstatus", "fcstatus", "x", "y", "z", "yaw", \
+                    columns = ["flightmode", "battery%", "gpsstatus", "fcstatus", "x", "y", "z", "yaw", \
                             "maporigin"])
                 #clear()
                 print(time.strftime("%H:%M:%S:"))

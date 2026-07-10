@@ -6,7 +6,7 @@ from fwfii.fc import *
 from fwfii.fc.advanced import *
 from fwfii.utils import *
 
-DRONE_ID = 98101
+DRONE_ID = 71101
 INIT_POS = (0, 0, 0, 0)
 
 d, h, f1 = connect(DRONE_ID)
@@ -22,18 +22,18 @@ Arm(f1)
 Delay(2000)
 Takeoff(f1, 120)
 Delay(3000)
-Move2(f1,320,320,100)
+"""Move2(f1,320,320,100)
 Delay(5000)
 Move2(f1,180,180,150)
-Delay(5000)
+Delay(5000)"""
 """Flip(f1,'x')
 Delay(5000)
 Flip(f1,'-x')
 Delay(5000)"""
-Move2(f1,40,40,100)
+"""Move2(f1,40,40,100)
 Delay(5000)
 Land(f1)
 Delay(5000)
-Disarm(f1)
+Disarm(f1)"""
 
 disconnect()

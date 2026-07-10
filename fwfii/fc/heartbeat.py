@@ -12,6 +12,11 @@ class HeartBeat:
     flights = {}
     _lock = Lock()
 
+    # Output mode: "normal" (every beat), "slow" (1Hz), "off" (silent)
+    _output_mode = "normal"
+    _last_print = {}       # uavid → last print timestamp (for "slow" mode)
+    SLOW_INTERVAL = 1.0    # seconds between prints in "slow" mode
+
     def __init__(self):
         self._sending = True
         self.t = Thread(target = self._beating_, args = ())
@@ -28,6 +33,20 @@ class HeartBeat:
     @staticmethod
     def Show(enable):
         HeartBeat._showing = enable
+
+    @staticmethod
+    def SetOutputMode(mode):
+        """Set console output mode: 'normal' | 'slow' | 'off'.
+
+        - normal : print every heartbeat (~5 Hz per drone)
+        - slow   : print at most once per second per drone
+        - off    : no console output (position file & logger unaffected)
+        """
+        if mode not in ("normal", "slow", "off"):
+            raise ValueError(f"Invalid output mode: {mode!r}, expected 'normal'/'slow'/'off'")
+        HeartBeat._output_mode = mode
+        if mode == "off":
+            HeartBeat._last_print.clear()
 
     @staticmethod
     def addFlight(flight):
@@ -61,7 +80,7 @@ class HeartBeat:
                     if GetCurTime() - flight.lastBeatTime >= self.INTERVAL:
                         HeartBeatData(flight)
                         RequestPosition(flight)
-                        # Save position to file (compatible with non-Windows)
+                        # Save position to file (independent of output mode)
                         appData = os.getenv("APPDATA")
                         if appData:
                             pos_dir = appData + '/FlightPos'
@@ -69,18 +88,23 @@ class HeartBeat:
                                 os.makedirs(pos_dir, exist_ok=True)
                             try:
                                 with open(pos_dir + '/' + str(uavid), 'w') as fp:
-                                    fp.write(str(flight.position))
+                                    fp.write(str(flight.display_position))
                             except Exception:
                                 pass
-                        # Print position with timestamp (ms) + battery % + fcstatus
-                        now = time.time()
-                        ms = int(now * 1000) % 1000
-                        ts = time.strftime("%H:%M:%S", time.localtime(now))
-                        ts = f"{ts}.{ms:03d}"
-                        x, y, z, yaw = flight.position
-                        # Battery: flight.voltage = direct percentage (0-100) from reg=8 payload[3]
-                        bat_pct = flight.voltage if flight.voltage else 0
-                        print(f"[{ts}] ID:{uavid} Pos:({x:.0f},{y:.0f},{z:.0f},{yaw:.0f}) Bat:{bat_pct}% [{flight.fcstatus}] {flight.flightmode}")
+                        # Console output — gated by output mode
+                        mode = HeartBeat._output_mode
+                        if mode != "off":
+                            now = time.time()
+                            if mode == "normal" or \
+                               (mode == "slow" and now - HeartBeat._last_print.get(uavid, 0) >= HeartBeat.SLOW_INTERVAL):
+                                ms = int(now * 1000) % 1000
+                                ts = time.strftime("%H:%M:%S", time.localtime(now))
+                                ts = f"{ts}.{ms:03d}"
+                                x, y, z, yaw = flight.display_position
+                                # Battery percentage from reg=8 payload[3] (0-100)
+                                bat_pct = flight.voltage if flight.voltage else 0
+                                print(f"[{ts}] ID:{uavid} Pos:({x:.0f},{y:.0f},{z:.0f},{yaw:.0f}) Bat:{bat_pct}% [{flight.fcstatus}] {flight.flightmode}")
+                                HeartBeat._last_print[uavid] = now
                         RequestBatteryCurrent(flight)
                         flight.lastBeatTime = GetCurTime()
         print("HeartBeat _beating_ end...\n")

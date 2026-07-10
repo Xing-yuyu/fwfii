@@ -12,3 +12,6 @@ venv/
 *.flac
 flight_logs/
 missions/output/
+test/*/output_*/
+*.pyc
+__pycache__/
