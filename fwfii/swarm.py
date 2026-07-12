@@ -35,7 +35,7 @@ import time
 import xml.etree.ElementTree as ET
 from threading import Thread
 
-from fwfii.gtrfs_compat import convert_pyfii_script
+from fwfii.gtrfs_compat import convert_gtrfs_script
 from fwfii.quick import connect, disconnect, plan, deliver
 from fwfii.fc import Flight
 from fwfii.fc.advanced import DelayLaunch
@@ -79,11 +79,12 @@ class SwarmProject:
     # ── pyfii .fii 加载 ────────────────────────────
 
     def load(self, project_dir):
-        """从 pyfii .fii 项目目录加载
+        """从 .fii 项目目录加载 (官方格式)
 
         自动解析:
           - .fii 文件 → 无人机 ID、起始位置、音乐
-          - 动作组/动作组N/offlineExcuteScript.py → 飞行脚本
+          - 动作组/动作组N/webCodeAll.py → 飞行脚本 (官方格式)
+          - 动作组/动作组N/offlineExcuteScript.py → 飞行脚本 (pyfii 格式, 备选)
         """
         project_dir = os.path.abspath(project_dir)
 
@@ -176,7 +177,9 @@ class SwarmProject:
                 if not os.path.isdir(ag_dir):
                     # 尝试 "动作组1" → "动作组 1" 空格变体
                     pass
-                script_path = os.path.join(ag_dir, "offlineExcuteScript.py")
+                script_path = os.path.join(ag_dir, "webCodeAll.py")
+                if not os.path.exists(script_path):
+                    script_path = os.path.join(ag_dir, "offlineExcuteScript.py")
                 if os.path.exists(script_path):
                     self.drones.append((uavid, script_path, pos_x, pos_y))
 
@@ -190,7 +193,7 @@ class SwarmProject:
     def compile(self, output_dir="./swarm_output"):
         """批量编译所有无人机脚本 → .ls 文件
 
-        自动将 pyfii/gtrfs 格式转换为 fwfii 兼容格式
+        自动将 gtrfs/官方 格式转换为 fwfii 兼容格式
         """
         os.makedirs(output_dir, exist_ok=True)
 
@@ -206,7 +209,7 @@ class SwarmProject:
             # 转换为 fwfii 兼容格式
             fwfii_script = os.path.join(scripts_dir,
                                         f"drone_{uavid}.py")
-            convert_pyfii_script(script_path, fwfii_script)
+            convert_gtrfs_script(script_path, fwfii_script)
 
             # 编译
             print(f"[Swarm] 编译 UAVID={uavid}  ← {os.path.basename(script_path)}")

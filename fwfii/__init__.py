@@ -27,6 +27,7 @@ from .fc.basic import (
     AddMark, Move2Marker, ReadPosition,
     SimpleHarmonic, CylindricalSpiral, RoundInAir, MovewHeading,
     Reach, ReachDelta, ReachMarker, ReachYaw, ReachDeltaYaw,
+    MotorPWM, MotorsPWM,
 )
 from .fc.advanced import (
     RTL, Reset, PowerOff, DelayLaunch,
@@ -84,3 +85,9 @@ from .gtrfs_compat import MoveDelta
 
 # ── 蜂群飞行 ──
 from .swarm import SwarmProject
+
+# ── 离线多机任务 ──
+from .offline_multi import MultiPlan
+
+# ── Fii 项目导出 ──
+from .fii_exporter import FiiExporter, fwfii_to_fii

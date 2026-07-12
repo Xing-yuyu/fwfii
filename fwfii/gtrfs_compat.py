@@ -93,18 +93,17 @@ WHITE  = 0xFFFFFF
 ORANGE = 0xFF8000
 PINK   = 0xFF0080
 
-
-def convert_pyfii_script(src_path, dst_path=None):
+def convert_gtrfs_script(src_path, dst_path=None):
     """
-    将 pyfii 生成的 offlineExcuteScript.py 转换为 fwfii 兼容格式。
+    将 gtrfs/官方软件生成的脚本转换为 fwfii 兼容格式。
 
-    只需替换 import 行:
+    替换 import 行:
         from gtrfs.fc   import *  →  from fwfii.gtrfs_compat import *
-        from gtrfs.led  import *
-        from gtrfs.utils import *
+        from gtrfs.led  import *   →  (已包含在 gtrfs_compat 中)
+        from gtrfs.utils import *  →  (已包含在 gtrfs_compat 中)
 
     Parameters:
-        src_path: pyfii 生成的脚本路径
+        src_path: gtrfs 生成的脚本路径 (webCodeAll.py / offlineExcuteScript.py)
         dst_path: 输出路径 (默认覆盖源文件)
     """
     with open(src_path, 'r', encoding='utf-8') as f:
@@ -122,21 +121,3 @@ def convert_pyfii_script(src_path, dst_path=None):
         f.write(code)
 
     return dst_path
-
-
-def run_pyfii_script(src_path):
-    """
-    直接运行 pyfii 生成的脚本 (在 fwfii 环境下)。
-
-    等同于:
-        exec(convert_pyfii_script(src_path))
-    """
-    with open(src_path, 'r', encoding='utf-8') as f:
-        code = f.read()
-
-    code = code.replace('from gtrfs.fc import *',
-                        'from fwfii.gtrfs_compat import *')
-    code = code.replace('from gtrfs.led import *', '')
-    code = code.replace('from gtrfs.utils import *', '')
-
-    exec(code)
