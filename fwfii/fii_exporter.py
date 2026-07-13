@@ -44,6 +44,7 @@ from __future__ import division, absolute_import, print_function
 import os
 import re
 import shutil
+import sys as _sys
 import xml.etree.ElementTree as ET
 
 
@@ -96,7 +97,9 @@ def _int_to_hex(color_int):
 def _parse_fwfii_color(arg_str):
     """解析 fwfii 脚本中的颜色参数 → '#rrggbb'
 
-    输入可能是: CYAN (名称), 0x00FFFF (十六进制), 65535 (十进制)
+    输入可能是: CYAN (名称), 0x00FFFF (十六进制).
+    只转换确定是颜色的值: 颜色名称常量 或 0x 前缀的十六进制。
+    不自动把普通整数转成颜色 (如 250 → #0000fa)，避免速度/时长被误转。
     """
     arg = arg_str.strip()
     # 颜色名称
@@ -108,13 +111,7 @@ def _parse_fwfii_color(arg_str):
             return '#{:06x}'.format(int(arg, 16) & 0xFFFFFF)
         except ValueError:
             pass
-    # 十进制整数
-    try:
-        val = int(arg)
-        if 0 <= val <= 0xFFFFFF:
-            return '#{:06x}'.format(val)
-    except ValueError:
-        pass
+    # 不自动转换十进制整数 — 速度、时长等应保持原值
     return arg
 
 
@@ -126,18 +123,18 @@ def _parse_fwfii_color(arg_str):
 def _parse_fwfii_script(script_path):
     """解析 fwfii per-drone 脚本 → [(ts_ms, func_name, [args...]), ...]
 
-    支持两种 fwfii 脚本格式:
-      - 上传模式 (ts 格式):   Func(f1, arg1, ts=1500)
-      - 实时模式 (Delay 格式): Func(f1, arg1)  配合 Delay(ms) 推断时间戳
-
-    也支持混合模式: 部分命令有 ts=, 部分靠 Delay 推断。
+    支持三种模式:
+      - 上传模式 (纯 ts):    Func(f1, arg1, ts=1500)
+      - 实时模式 (纯 Delay): Func(f1, arg1)  配合 Delay(ms) 推断时间戳
+      - 混合模式:           部分有 ts=, 部分靠 Delay 推断
 
     返回的命令列表按 ts 升序排列。
     """
     with open(script_path, 'r', encoding='utf-8') as f:
         code = f.read()
 
-    raw_items = []  # [(line_no, 'cmd'|'delay', ts_or_ms, cmd_name, args), ...]
+    # raw_items: [(kind, value, cmd_name, [args], ts_explicit), ...]
+    raw_items = []
 
     for line in code.split('\n'):
         line = line.strip()
@@ -149,7 +146,7 @@ def _parse_fwfii_script(script_path):
         dm = re.match(r'^Delay\((\d+)\)', line)
         if dm:
             ms = int(dm.group(1))
-            raw_items.append(('delay', ms, None, None))
+            raw_items.append(('delay', ms, None, None, False))
             continue
 
         # ── Func(f1, ...) 或 Func(f1) 无参 ──
@@ -170,6 +167,7 @@ def _parse_fwfii_script(script_path):
             continue
 
         ts = 0
+        ts_explicit = False
         clean_args = []
 
         if args_str:
@@ -178,6 +176,7 @@ def _parse_fwfii_script(script_path):
                 p = p.strip()
                 kv = p.split('=', 1)
                 if len(kv) == 2 and kv[0].strip() == 'ts':
+                    ts_explicit = True
                     try:
                         ts = int(kv[1].strip())
                     except ValueError:
@@ -185,27 +184,25 @@ def _parse_fwfii_script(script_path):
                 else:
                     clean_args.append(p)
 
-        raw_items.append(('cmd', ts, cmd_name, clean_args))
+        raw_items.append(('cmd', ts, cmd_name, clean_args, ts_explicit))
 
-    # ── 判断是否有显式 ts ──
-    has_explicit_ts = any(
-        item[0] == 'cmd' and item[1] > 0 for item in raw_items
-    )
-
-    # ── 时间戳推断 ──
+    # ── 时间戳推断 (支持混合模式) ──
     commands = []
-    if has_explicit_ts:
-        # 上传模式: 直接用 ts= 值, Delay 跳过 (ts 已编码时间)
-        for kind, ts_or_ms, cmd_name, args in raw_items:
-            if kind == 'cmd':
-                commands.append((ts_or_ms, cmd_name, args))
-    else:
-        # 实时模式: Delay(ms) 累加时间戳
-        clock = 0
-        for kind, ts_or_ms, cmd_name, args in raw_items:
-            if kind == 'delay':
-                clock += ts_or_ms  # ts_or_ms 是 Delay 的毫秒数
-            elif kind == 'cmd':
+    clock = 0  # Delay 累加时钟
+
+    for item in raw_items:
+        kind = item[0]
+        if kind == 'delay':
+            clock += item[1]  # item[1] = ms
+        elif kind == 'cmd':
+            ts_val, cmd_name, args, ts_explicit = item[1], item[2], item[3], item[4]
+            if ts_explicit:
+                # 显式 ts= 直接使用, 同时更新 clock (后续 Delay 从这之后累加)
+                commands.append((ts_val, cmd_name, args))
+                if ts_val > clock:
+                    clock = ts_val
+            else:
+                # 无显式 ts: 使用当前 Delay 累加时钟
                 commands.append((clock, cmd_name, args))
 
     # 按 ts 排序
@@ -245,73 +242,25 @@ def _split_args(s):
 # ── webCodeAll.py 生成 ────────────────────────────
 
 def _to_webcodeall_py(commands, uavid):
-    """将解析出的命令列表转换为 webCodeAll.py 源码 (gtrfs 格式)
-
-    fwfii 格式 (输入):
-        Arm(f1, ts=500)
-        AllOn(f1, CYAN, ts=800)
-        Takeoff(f1, 100, ts=1500)
-
-    webCodeAll.py 格式 (输出):
-        Start()
-        inittime(00:00)
-          Arm(f1)
-          Delay(500)
-          AllOn(f1,#00ffff,1)
-        inittime(00:01)
-          Delay(700)
-          Takeoff(f1,100)
-    """
+    """转换为 webCodeAll.py: 单个 inittime(00:00), 全用 Delay 隔开."""
     if not commands:
         return 'Start()\n'
 
-    lines = []
-    lines.append('Start()')
+    lines = ['Start()', 'inittime(00:00)']
+    prev_ts = commands[0][0] if commands else 0
 
-    # 将命令按秒分组 (用于 inittime)
-    # inittime 以 MM:SS 为单位
-    groups = {}  # second → [(ts_ms, cmd, args), ...]
     for ts_ms, cmd, args in commands:
-        sec = ts_ms // 1000
-        if sec not in groups:
-            groups[sec] = []
-        groups[sec].append((ts_ms, cmd, args))
+        delta = ts_ms - prev_ts
+        if delta > 0:
+            lines.append('  Delay(%d)' % delta)
 
-    sorted_seconds = sorted(groups.keys())
-    prev_end_ms = sorted_seconds[0] * 1000 if sorted_seconds else 0
+        gtrfs_args = _convert_args_to_gtrfs(cmd, args)
+        if gtrfs_args:
+            lines.append('  %s(f1,%s)' % (cmd, gtrfs_args))
+        else:
+            lines.append('  %s(f1)' % cmd)
 
-    for sec in sorted_seconds:
-        mm = sec // 60
-        ss = sec % 60
-        inittime_str = 'inittime(%02d:%02d)' % (mm, ss)
-        lines.append(inittime_str)
-
-        group_cmds = groups[sec]
-        first_in_block = True
-        for ts_ms, cmd, args in group_cmds:
-            if first_in_block:
-                # 块首命令不插入 Delay — inittime() 本身处理跨块时序
-                first_in_block = False
-            else:
-                # 块内命令间的延时
-                delta_ms = ts_ms - prev_end_ms
-                if delta_ms > 0:
-                    lines.append('  Delay(%d)' % delta_ms)
-
-            # 生成命令调用行
-            gtrfs_args = _convert_args_to_gtrfs(cmd, args)
-            if gtrfs_args:
-                lines.append('  %s(f1,%s)' % (cmd, gtrfs_args))
-            else:
-                lines.append('  %s(f1)' % cmd)
-
-            prev_end_ms = ts_ms
-
-    # 函数末尾的延时 (如果有)
-    if commands:
-        last_ts = commands[-1][0]
-        # 添加末尾标记延时
-        pass
+        prev_ts = ts_ms
 
     return '\n'.join(lines) + '\n'
 
@@ -506,46 +455,29 @@ def _gen_block_xml(block_type, fields, indent=12):
     return lines
 
 
-def _build_block_chain(block_xml_list, indent=12):
-    """将多个块用 <next> 串联成一个 XML 片段.
-    block_xml_list: 每个元素是一个块的行列表 (不含 <block> 开始)
-    返回行列表
+def _build_block_chain(block_xml_list):
+    """将多个块嵌套串联: 每个块的 <next> 包含下一块, 形成链.
+
+    Blockly 要求: <block A><next><block B><next><block C/></next></block></next></block>
     """
     if not block_xml_list:
         return []
     if len(block_xml_list) == 1:
         return block_xml_list[0]
 
-    # 从后往前合并: 最后一个块嵌入倒数第二个的 <next>...</next> 中
-    result = block_xml_list[0]
-    for i in range(1, len(block_xml_list)):
-        inner = block_xml_list[i]
-        # 在 result 的倒数第二行 (</block> 之前) 插入 <next> inner </next>
-        pre = ' ' * indent
-        # 找到 </block> 的位置
-        insert_at = len(result) - 1
-        result.insert(insert_at, '%s  <next>' % pre)
-        for line in inner:
-            result.insert(insert_at + 1, '  ' + line)  # 额外缩进
+    # 从右往左构建嵌套链, 不缩进 (避免深层嵌套时缩进爆炸)
+    result = block_xml_list[-1]
+    for i in range(len(block_xml_list) - 2, -1, -1):
+        blk = block_xml_list[i]
+        insert_at = len(blk) - 1
+        blk.insert(insert_at, '<next>')
+        for line in result:
             insert_at += 1
-        result.insert(insert_at + 1, '%s  </next>' % pre)
+            blk.insert(insert_at, line)
+        insert_at += 1
+        blk.insert(insert_at, '</next>')
+        result = blk
     return result
-
-
-def _format_xml_field(cmd_name, field_name, args):
-    """从命令参数中提取字段值并格式化为 XML 字符串"""
-    if field_name == 'color1':
-        # 第一个参数是颜色
-        if args:
-            return _parse_fwfii_color(str(args[0]))
-        return '#ffffff'
-    if field_name in ('bright',):
-        # 亮度参数 (AllBlink 的第4个, AllOn 的第2个)
-        # 映射: _BLOCKLY_MAP 中 ('bright', 3, '1') → arg索引3, 默认'1'
-        return '1'
-    if field_name in ('dur', 'delay', 'time'):
-        return '0'
-    return '0'
 
 
 def _cmd_to_block_xml(ts_ms, cmd_name, args):
@@ -554,12 +486,6 @@ def _cmd_to_block_xml(ts_ms, cmd_name, args):
     """
     if cmd_name in ('__merged__', '__skip__'):
         return None
-
-    # 特殊: Delay
-    if cmd_name == 'Delay':
-        ms = int(args[0]) if args else 0
-        return _gen_block_xml('block_delay',
-                              [('delay', '0'), ('time', str(ms))])
 
     # 查找映射
     if cmd_name not in _BLOCKLY_MAP:
@@ -599,83 +525,43 @@ def _to_webcodeall_xml(commands):
   <block type="Goertek_Start" x="100" y="20"></block>
 </xml>'''
 
-    # 按时钟秒分组
-    groups = {}
-    for ts_ms, cmd, args in commands:
-        sec = ts_ms // 1000
-        if sec not in groups:
-            groups[sec] = []
-        groups[sec].append((ts_ms, cmd, args))
+    # 合并速度对, 全部放在一个 inittime(00:00) 下
+    all_cmds = _merge_velocity_pairs(list(commands))
 
-    sorted_seconds = sorted(groups.keys())
-    if not sorted_seconds:
-        return '''<xml xmlns="http://www.w3.org/1999/xhtml">
-  <variables></variables>
-  <block type="Goertek_Start" x="100" y="20"></block>
-</xml>'''
-
-    # 构建每个 inittime 块
-    inittime_blocks = []
-
-    for si, sec in enumerate(sorted_seconds):
-        mm = sec // 60
-        ss = sec % 60
-        time_str = '%02d:%02d' % (mm, ss)
-
-        cmds = _merge_velocity_pairs(groups[sec])
-
-        # 构建块内命令链
-        cmd_blocks = []
-        for ts_ms, cmd_name, args in cmds:
-            blk = _cmd_to_block_xml(ts_ms, cmd_name, args)
-            if blk:
-                cmd_blocks.append(blk)
-
-        # 串联合并块内命令
-        if cmd_blocks:
-            chained = _build_block_chain(cmd_blocks)
+    # 构建命令链, 间隙插入 block_delay
+    cmd_blocks = []
+    prev_ts = commands[0][0] if commands else 0
+    for ts_ms, cmd_name, args in all_cmds:
+        delta = ts_ms - prev_ts
+        if delta > 0:
+            cmd_blocks.append(_gen_block_xml('block_delay',
+                [('delay', '0'), ('time', str(delta))]))
+        blk = _cmd_to_block_xml(ts_ms, cmd_name, args)
+        if blk:
+            cmd_blocks.append(blk)
         else:
-            # 空块: 插入一个占位 delay=0
-            chained = _gen_block_xml('block_delay',
-                                     [('delay', '0'), ('time', '0')])
+            # 未知/跳过的命令 — 记录日志便于调试
+            print('[FiiExporter] 跳过未知块: %s (ts=%d)' % (cmd_name, ts_ms),
+                  file=_sys.stderr)
+        prev_ts = ts_ms  # 无论块是否生成都要更新时钟
 
-        # 包装为 inittime 块
-        it_lines = []
-        it_lines.append(' ' * 8 + '<block type="block_inittime">')
-        it_lines.append(' ' * 10 + '<field name="time">%s</field>' % time_str)
-        it_lines.append(' ' * 10 + '<field name="color">#cccccc</field>')
-        it_lines.append(' ' * 10 + '<statement name="functionIntit">')
-        for line in chained:
-            it_lines.append(' ' * 2 + line)  # 额外缩进
-        it_lines.append(' ' * 10 + '</statement>')
-        it_lines.append(' ' * 8 + '</block>')
+    chained = _build_block_chain(cmd_blocks) if cmd_blocks else \
+        _gen_block_xml('block_delay', [('delay', '0'), ('time', '0')])
 
-        inittime_blocks.append(it_lines)
-
-    # 串联所有 inittime 块
-    if len(inittime_blocks) == 1:
-        it_chain = inittime_blocks[0]
-    else:
-        # 从后往前合并
-        result = inittime_blocks[0]
-        for i in range(1, len(inittime_blocks)):
-            inner = inittime_blocks[i]
-            insert_at = len(result) - 1  # </block> 之前
-            result.insert(insert_at, ' ' * 8 + '  <next>')
-            for line in inner:
-                result.insert(insert_at + 1, ' ' * 2 + line)
-                insert_at += 1
-            result.insert(insert_at + 1, ' ' * 8 + '  </next>')
-        it_chain = result
-
-    # 包装为 Start → next → inittime_chain
+    # 包装为一个 inittime(00:00) 块
     xml_lines = []
     xml_lines.append('<xml xmlns="http://www.w3.org/1999/xhtml">')
     xml_lines.append('  <variables></variables>')
     xml_lines.append('  <block type="Goertek_Start" x="0" y="0">')
     xml_lines.append('    <next>')
-    for line in it_chain:
-        xml_lines.append('  ' + line)
+    xml_lines.append('      <block type="block_inittime">')
+    xml_lines.append('        <field name="time">00:00</field>')
+    xml_lines.append('        <field name="color">#cccccc</field>')
+    xml_lines.append('        <statement name="functionIntit">')
+    for line in chained:
+        xml_lines.append('          ' + line)
+    xml_lines.append('        </statement>')
+    xml_lines.append('      </block>')
     xml_lines.append('    </next>')
     xml_lines.append('  </block>')
     xml_lines.append('</xml>')

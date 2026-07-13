@@ -5,7 +5,7 @@ with open("README.md", encoding="utf-8") as f:
 
 setup(
     name="fwfii",
-    version="1.3.0",
+    version="1.3.1",
     description="Fii Drone Flight Control SDK — F400/F600 多机蜂群编队 + .fii 官方项目导出",
     long_description=long_description,
     long_description_content_type="text/markdown",

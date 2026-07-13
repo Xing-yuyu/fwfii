@@ -623,6 +623,21 @@ ID = group × 1000 + number
 | LED 不亮 | Emergency 通道未通 | 先跑一次 connect |
 | 音乐无声 | pygame 未安装 | `pip install pygame` |
 
+## 版本历史
+
+### v1.3.1 (2026-07-13)
+
+- **修复** `_parse_fwfii_color` 不再自动把普通整数转成 hex 颜色（如 `250 → #0000fa`），避免速度/时长被误转
+- **修复** `_parse_fwfii_script` 混合模式：Delay + 显式 `ts=` 混用时，非 ts 命令从 Delay 时钟正确推算，不再全部归零
+- **修复** `_to_webcodeall_xml` 中未知命令导致 `prev_ts` 不更新的 bug
+- **改进** 移除 pyfii 适配功能，FiiExporter 原生支持 .fii 导出 + Blockly XML
+
+### v1.3.0
+
+- **新增** `FiiExporter` — 原生 .fii 官方项目导出，含 Blockly XML 可视化块
+- **新增** 混合模式支持：`plan()` 同时支持 ts + Delay
+- **新增** `offline_multi.py` — MultiPlan 离线多机统一脚本自动拆分
+
 ## License
 
 MIT
